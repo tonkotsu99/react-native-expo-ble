@@ -1,0 +1,22 @@
+# bleStatus Agent Guide
+
+- **Project type:** Expo Router + TypeScript + Tamagui; entry point is Expo's `expo-router/entry`.
+- **Navigation shell:** `app/_layout.tsx` wraps screens in `TamaguiProvider` and calls `useGeofencing()` once on boot to register background tasks.
+- **Default screen:** `app/index.tsx` re-exports `components/pages/AttendancePage.tsx`; extend this page rather than adding new stacks unless routing changes.
+- **UI composition:** Build screens with `components/templates/MainTemplate.tsx` and atoms like `L_Button`, `M_Text`, `PageContainer` for consistent Tamagui styling.
+- **BLE singleton:** Always import the shared `bleManager` from `bluetooth/bleManagerInstance.ts` to avoid multiple native BLE managers.
+- **BLE workflow:** `hooks/useBLE.ts` handles permission gating per Android API level, scans for `BLE_SERVICE_UUID`, then connects and posts attendance; reuse its helpers instead of duplicating scan logic.
+- **Disconnect handling:** The hook registers `device.onDisconnected` to call exit APIs and mark app state `UNCONFIRMED`; keep this subscription removal pattern when modifying.
+- **Attendance APIs:** Endpoints live in `constants/index.ts`; current payload uses placeholder `userId`—propagate real IDs via hook arguments instead of hardcoding.
+- **Async state store:** `state/appState.ts` wraps AsyncStorage; updates are async and logged, so await `setAppState` before sequencing BLE or network side-effects.
+- **Geofencing hook:** `hooks/useGeofencing.ts` requests both foreground and background location, imports `tasks/geofencingTask.ts` for side-effect registration, and starts geofencing for the Kyutech region.
+- **Geofencing task:** `tasks/geofencingTask.ts` handles enter/exit events, posts attendance on entry, kicks off periodic checks, and toggles app state—modify both task and hook together.
+- **Periodic fetch:** `tasks/periodicCheckTask.ts` configures `react-native-background-fetch` to re-scan when state is `INSIDE_AREA` or `UNCONFIRMED`; fill in the TODO with lightweight scan logic if reliability work is needed.
+- **Networking:** Both BLE and geofencing tasks use global `fetch`; prefer centralizing headers/body in shared helpers if payload changes to keep background tasks aligned.
+- **Permissions config:** `app.json` already enables `react-native-ble-plx` background mode and `expo-location` prompts; update messages there when adding new permission copy.
+- **Styling:** Tamagui tokens (e.g., `$5`, `$blue10`) are used consistently; reuse them rather than raw numbers for theme cohesion.
+- **Strict linting:** Run `npm run lint` before commits; ESLint derives from Expo defaults with `dist/*` ignored.
+- **Dev commands:** Common workflows: `npm install`, `npm run start`, `npm run android`, `npm run ios`, `npm run web`; use `npm run reset-project` only to scaffold a clean expo template.
+- **Expo features:** Experiments in `app.json` enable typed routes and React Compiler—ensure new routes live under `app/` and keep file names aligned with router conventions.
+- **Build context:** Background tasks rely on native modules (`react-native-ble-plx`, `react-native-background-fetch`); remind reviewers that bare Expo Go cannot run them—use a dev client (EAS) when testing.
+- **Next steps:** After edits, confirm background logs via device/emulator console because async tasks do not surface in UI yet.
