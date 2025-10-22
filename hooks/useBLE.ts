@@ -2,6 +2,11 @@ import { bleManager } from "@/bluetooth/bleManagerInstance";
 import { API_URL_ENTER, API_URL_EXIT, BLE_SERVICE_UUID } from "@/constants";
 import { setAppState } from "@/state/appState";
 import { getUserId } from "@/state/userProfile";
+import {
+  sendBleConnectedNotification,
+  sendBleDisconnectedNotification,
+  sendStateUnconfirmedNotification,
+} from "@/utils/notifications";
 import * as DeviceInfo from "expo-device";
 import { useState } from "react";
 import { PermissionsAndroid, Platform } from "react-native";
@@ -87,10 +92,14 @@ export const useBLE = (): UseBLE => {
           if (disconectedDevice) {
             console.log(`デバイスが切断されました: ${disconectedDevice.name}`);
             postAttendance(API_URL_EXIT, disconectedDevice);
+            // BLE切断通知を送信
+            await sendBleDisconnectedNotification(disconectedDevice.name);
           }
 
           // すぐにAPIを叩くのではなく、状態を「未確認」に変更する
           await setAppState("UNCONFIRMED");
+          // 状態変化通知を送信
+          await sendStateUnconfirmedNotification();
 
           setConnectedDevice(null);
           subscription.remove();
@@ -103,6 +112,8 @@ export const useBLE = (): UseBLE => {
       setConnectedDevice(connected);
       await setAppState("PRESENT");
       await postAttendance(API_URL_ENTER, connected);
+      // BLE接続成功通知を送信
+      await sendBleConnectedNotification(connected.name);
       console.log(`接続成功: ${connected.name}`);
     } catch (error) {
       console.error(`接続失敗: ${device.name}`, error);

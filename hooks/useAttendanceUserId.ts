@@ -1,6 +1,10 @@
 import { useUserProfile } from "@/hooks/useUserProfile";
+import {
+  sendUserIdRequiredNotification,
+  sendUserIdSavedNotification,
+  sendUserIdSaveFailedNotification,
+} from "@/utils/notifications";
 import { useCallback, useEffect, useState } from "react";
-import { Alert } from "react-native";
 
 type UseAttendanceUserIdResult = {
   userId: string | null;
@@ -32,17 +36,17 @@ export const useAttendanceUserId = (): UseAttendanceUserIdResult => {
   const saveDraftAsUserId = useCallback(async () => {
     const trimmed = draftUserId.trim();
     if (!trimmed) {
-      Alert.alert("ユーザーIDを入力してください");
+      await sendUserIdRequiredNotification();
       return;
     }
 
     setIsSaving(true);
     try {
       await saveUserId(trimmed);
-      Alert.alert("ユーザーIDを保存しました");
+      await sendUserIdSavedNotification();
     } catch (err) {
       console.error("ユーザーIDの保存に失敗しました", err);
-      Alert.alert("保存に失敗しました", "時間をおいて再度お試しください。");
+      await sendUserIdSaveFailedNotification();
     } finally {
       setIsSaving(false);
     }

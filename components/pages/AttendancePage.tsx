@@ -24,7 +24,8 @@ export default function AttendancePage() {
   const [isScanning, setIsScanning] = useState(false);
 
   const handleScan = useCallback(async (): Promise<void> => {
-    if (!requireUserId()) {
+    const hasUserId = await requireUserId();
+    if (!hasUserId) {
       return;
     }
 
@@ -46,7 +47,8 @@ export default function AttendancePage() {
   }, [requireUserId, requestPermissions, startScan]);
 
   const handleDisconnect = useCallback(async (): Promise<void> => {
-    if (!requireUserId()) {
+    const hasUserId = await requireUserId();
+    if (!hasUserId) {
       return;
     }
 

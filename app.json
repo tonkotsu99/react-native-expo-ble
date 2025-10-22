@@ -7,6 +7,9 @@
     "scheme": "reactnativeexpoble",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
+    "notification": {
+      "color": "#0000FF"
+    },
     "ios": {
       "supportsTablet": true
     },

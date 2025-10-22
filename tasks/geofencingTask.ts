@@ -13,6 +13,11 @@ import {
   setInsideAreaReportStatus,
 } from "../state/appState";
 import { getUserId } from "../state/userProfile";
+import {
+  sendBleConnectedNotification,
+  sendGeofenceEnterNotification,
+  sendGeofenceExitNotification,
+} from "../utils/notifications";
 import { postInsideAreaStatus } from "./insideAreaStatus";
 import { initPeriodicTask } from "./periodicCheckTask";
 
@@ -71,6 +76,8 @@ const tryConnectBleDevice = () => {
             deviceId: connectedDevice.id,
             deviceName: connectedDevice.name,
           });
+          // BLE接続成功通知を送信
+          await sendBleConnectedNotification(connectedDevice.name);
           // 接続維持や切断監視が必要な場合はここに追加
         })
         .catch((connectError) => {
@@ -105,6 +112,9 @@ TaskManager.defineTask(GEOFENCING_TASK_NAME, async ({ data, error }) => {
     const previousState = await getAppState();
     await setAppState("INSIDE_AREA");
 
+    // ジオフェンス入場通知を送信
+    await sendGeofenceEnterNotification();
+
     const alreadyReported = await getInsideAreaReportStatus();
     if (previousState === "INSIDE_AREA" && alreadyReported) {
       console.log(
@@ -131,6 +141,10 @@ TaskManager.defineTask(GEOFENCING_TASK_NAME, async ({ data, error }) => {
       region?.identifier ?? "unknown"
     );
     await setAppState("OUTSIDE");
+
+    // ジオフェンス退出通知を送信
+    await sendGeofenceExitNotification();
+
     try {
       await postAttendance(API_URL_EXIT);
       console.log("[Geofencing Task] Exit attendance reported.");

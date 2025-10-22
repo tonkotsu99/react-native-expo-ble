@@ -1,8 +1,7 @@
-# background-ble-maintenance Specification
+# background-ble-maintenance Specification Delta
 
-## Purpose
-TBD - created by archiving change add-periodic-ble-rescan. Update Purpose after archive.
-## Requirements
+## MODIFIED Requirements
+
 ### Requirement: Periodic BLE Reconnect
 
 背景タスクはジオフェンス内にいるが BLE が未接続の場合、定期的に BLE デバイスへの再接続を試みなければならない (SHALL)。接続/切断時にはローカル通知を送信しなければならない (SHALL)。
@@ -38,6 +37,8 @@ TBD - created by archiving change add-periodic-ble-rescan. Update Purpose after 
 - **THEN** タスクは永続化されたユーザー ID を取得してペイロードに含めなければならない (SHALL)
 - **AND** ユーザー ID が取得できない場合は API 呼び出しをスキップし、ログに警告を残さなければならない (SHALL)
 
+## ADDED Requirements
+
 ### Requirement: Geofence Event Notifications
 
 ジオフェンス入退出イベント発生時には、ユーザーにローカル通知を送信しなければならない (SHALL)。
@@ -55,4 +56,3 @@ TBD - created by archiving change add-periodic-ble-rescan. Update Purpose after 
 - **WHEN** `useBLE.ts` の `device.onDisconnected` コールバックが実行される
 - **THEN** 「研究室デバイスから切断されました」というローカル通知を送信しなければならない (SHALL)
 - **AND** デバイス名が通知本文に含まれる
-

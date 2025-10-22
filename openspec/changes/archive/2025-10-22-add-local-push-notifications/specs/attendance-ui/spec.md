@@ -1,8 +1,7 @@
-# attendance-ui Specification
+# attendance-ui Specification Delta
 
-## Purpose
-TBD - created by archiving change add-attendance-page-ui. Update Purpose after archive.
-## Requirements
+## MODIFIED Requirements
+
 ### Requirement: Manual Attendance Controls Page
 
 アプリは出席ページを表示し、BLE 在室フローのための接続状態と手動操作を提供しなければならない (SHALL)。ユーザー操作の結果はローカル通知で通知しなければならない (SHALL)。
@@ -41,6 +40,8 @@ TBD - created by archiving change add-attendance-page-ui. Update Purpose after a
 - **THEN** ページは操作をブロックし、ユーザーに ID 設定を促すガイダンス通知を送信しなければならない (SHALL)
 - **AND** 既存の `Alert.alert()` は使用せず、ローカル通知を利用しなければならない (SHALL)
 
+## ADDED Requirements
+
 ### Requirement: User ID Management Notifications
 
 ユーザーID の保存、読み込み、検証時の結果は `Alert.alert()` ではなくローカル通知で通知しなければならない (SHALL)。
@@ -72,4 +73,3 @@ TBD - created by archiving change add-attendance-page-ui. Update Purpose after a
 - **WHEN** `useRequireUserId.ts` がローディング状態を検出する
 - **THEN** 「ユーザーID読込中」というローカル通知を送信しなければならない (SHALL)
 - **AND** 既存の `Alert.alert()` は使用しない
-
