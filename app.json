@@ -11,12 +11,15 @@
       "color": "#0000FF"
     },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "infoPlist": {
+        "UIBackgroundModes": ["location"]
+      }
     },
     "android": {
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE"
-        },
+      },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false
     },
@@ -50,7 +53,9 @@
       [
         "expo-location",
         {
-          "locationAlwaysAndWhenInUsePermission": "バックグラウンドで研究室の出入りを検知し、在室状況を自動で更新するために位置情報への常時アクセスを許可してください。"
+          "locationAlwaysAndWhenInUsePermission": "バックグラウンドで研究室の出入りを検知し、在室状況を自動で更新するために位置情報への常時アクセスを許可してください。",
+          "isIosBackgroundLocationEnabled": true,
+          "isAndroidBackgroundLocationEnabled": true
         }
       ]
     ],
