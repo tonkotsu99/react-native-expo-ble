@@ -8,10 +8,11 @@ import {
   RefreshCw,
   Shield,
   Trash2,
+  User,
 } from "@tamagui/lucide-icons";
 import React from "react";
 import type { YStackProps } from "tamagui";
-import { H3, H4, styled, Switch, XStack, YStack } from "tamagui";
+import { H3, H4, Input, styled, Switch, XStack, YStack } from "tamagui";
 import { M_Text } from "../atoms/M_Text";
 import { ThemeToggleButton } from "../atoms/ThemeToggleButton";
 
@@ -118,12 +119,14 @@ export type SettingsValues = {
   logLevel: "info" | "warning" | "error";
   dataRetentionDays: number;
   autoExportLogs: boolean;
+  // UserID関連を追加
+  userId: string | null;
 };
 
 // 設定項目の定義
 export type SettingItem = {
   id: string;
-  type: "toggle" | "select" | "action" | "info" | "link";
+  type: "toggle" | "select" | "action" | "info" | "link" | "input";
   title: string;
   description?: string;
   icon?: React.ComponentType<{ size?: number; color?: string }>;
@@ -133,6 +136,8 @@ export type SettingItem = {
   onChange?: (value: any) => void;
   disabled?: boolean;
   destructive?: boolean;
+  placeholder?: string;
+  keyboardType?: "default" | "numeric" | "email-address";
 };
 
 // SettingsPanel プロパティ
@@ -147,6 +152,7 @@ export type SettingsPanelProps = YStackProps & {
   showHeader?: boolean;
   compactMode?: boolean;
   sections?: {
+    userId?: boolean;
     appearance?: boolean;
     notifications?: boolean;
     behavior?: boolean;
@@ -166,6 +172,12 @@ export type SettingsPanelProps = YStackProps & {
   onOpenPrivacyPolicy?: () => void;
   onOpenLicenses?: () => void;
   onContactSupport?: () => void;
+
+  // UserID関連
+  onUserIdSave?: (userId: string) => Promise<void>;
+  onUserIdModalOpen?: () => void;
+  userIdLoading?: boolean;
+  userIdSaving?: boolean;
 
   // アプリ情報
   appVersion?: string;
@@ -188,11 +200,35 @@ const getDefaultSections = (
     onOpenPrivacyPolicy,
     onOpenLicenses,
     onContactSupport,
+    onUserIdSave,
+    onUserIdModalOpen,
+    userIdLoading,
+    userIdSaving,
     appVersion,
     appBuild,
   } = props;
 
   return {
+    userId: [
+      {
+        id: "userId",
+        type: "info",
+        title: "ユーザーID",
+        description: settings.userId
+          ? `現在設定中: ${settings.userId}`
+          : "未設定 - BLE操作には設定が必要です",
+        icon: User,
+        value: settings.userId || "未設定",
+      },
+      {
+        id: "userIdEdit",
+        type: "action",
+        title: "ユーザーIDを変更",
+        description: "新しいユーザーIDを設定または変更",
+        disabled: userIdLoading || userIdSaving,
+        onPress: onUserIdModalOpen,
+      },
+    ],
     appearance: [
       {
         id: "theme",
@@ -411,6 +447,20 @@ export const SettingsPanel = React.forwardRef<any, SettingsPanelProps>(
                 />
               )}
 
+              {item.type === "input" && (
+                <Input
+                  flex={1}
+                  size="$3"
+                  value={item.value || ""}
+                  placeholder={item.placeholder}
+                  onChangeText={item.onChange}
+                  disabled={item.disabled}
+                  keyboardType={item.keyboardType || "default"}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                />
+              )}
+
               {item.type === "select" && (
                 <XStack alignItems="center" space="$2">
                   <M_Text fontSize="$3" color="$color11">
@@ -468,6 +518,16 @@ export const SettingsPanel = React.forwardRef<any, SettingsPanelProps>(
               />
             )}
           </PanelHeader>
+        )}
+
+        {/* ユーザーID設定 */}
+        {sections.userId && (
+          <SettingsSection>
+            <H4 fontSize="$4" fontWeight="600" color="$color" marginBottom="$2">
+              ユーザー設定
+            </H4>
+            {defaultSections.userId.map(renderSettingItem)}
+          </SettingsSection>
         )}
 
         {/* 外観設定 */}

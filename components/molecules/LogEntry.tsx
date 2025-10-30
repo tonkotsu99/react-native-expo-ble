@@ -94,6 +94,8 @@ export type LogEventType =
   | "ble_error"
   | "location_entered"
   | "location_exited"
+  | "location_update"
+  | "location_error"
   | "attendance_posted"
   | "attendance_failed"
   | "state_changed"
@@ -127,6 +129,8 @@ const getEventIcon = (eventType: LogEventType) => {
     ble_error: XCircle,
     location_entered: MapPin,
     location_exited: MapPin,
+    location_update: MapPin,
+    location_error: XCircle,
     attendance_posted: CheckCircle,
     attendance_failed: XCircle,
     state_changed: Info,

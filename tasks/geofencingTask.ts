@@ -104,6 +104,17 @@ TaskManager.defineTask(GEOFENCING_TASK_NAME, async ({ data, error }) => {
     region: LocationRegion | undefined;
   };
 
+  // デバッグ情報を追加
+  console.log("[Geofencing Task] Event received:", {
+    eventType:
+      eventType === LocationGeofencingEventType.Enter ? "ENTER" : "EXIT",
+    regionId: region?.identifier,
+    latitude: region?.latitude,
+    longitude: region?.longitude,
+    radius: region?.radius,
+    timestamp: new Date().toISOString(),
+  });
+
   if (eventType === LocationGeofencingEventType.Enter) {
     console.log(
       "[Geofencing Task] Entered area:",

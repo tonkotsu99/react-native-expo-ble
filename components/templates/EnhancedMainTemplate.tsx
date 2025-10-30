@@ -10,7 +10,11 @@ import type { BLEConnectionStatus } from "../molecules/ConnectionVisualization";
 import type { LogEntryData } from "../molecules/LogEntry";
 import { ActivityLog } from "../organisms/ActivityLog";
 import { ConnectionPanel } from "../organisms/ConnectionPanel";
-import { SettingsPanel, type SettingsValues } from "../organisms/SettingsPanel";
+import {
+  SettingsPanel,
+  type SettingItem,
+  type SettingsValues,
+} from "../organisms/SettingsPanel";
 import {
   StatusDashboard,
   type DashboardState,
@@ -203,6 +207,7 @@ export type EnhancedMainTemplateProps = YStackProps & {
   connectionProcess?: ConnectionProcess;
   logs: LogEntryData[];
   settings: SettingsValues;
+  customSettingsItems?: SettingItem[];
 
   // BLE操佁E
   onStartScan?: () => void;
@@ -212,11 +217,15 @@ export type EnhancedMainTemplateProps = YStackProps & {
   onReconnect?: () => void;
   onCopyDeviceId?: (deviceId: string) => void;
 
-  // アプリ操佁E
+  // アプリ操作
   onAppStatePress?: (state: any) => void;
   onThemeChange?: (theme: "light" | "dark" | "system") => void;
   onSettingChange?: (key: keyof SettingsValues, value: any) => void;
   onRefreshDashboard?: () => void;
+  onUserIdSave?: (userId: string) => Promise<void>;
+  onUserIdModalOpen?: () => void;
+  userIdLoading?: boolean;
+  userIdSaving?: boolean;
 
   // ログ操佁E
   onLogPress?: (log: LogEntryData) => void;
@@ -253,6 +262,7 @@ export const EnhancedMainTemplate = React.forwardRef<
     connectionProcess,
     logs,
     settings,
+    customSettingsItems,
     onStartScan,
     onStopScan,
     onConnect,
@@ -263,6 +273,10 @@ export const EnhancedMainTemplate = React.forwardRef<
     onThemeChange,
     onSettingChange,
     onRefreshDashboard,
+    onUserIdSave,
+    onUserIdModalOpen,
+    userIdLoading = false,
+    userIdSaving = false,
     onLogPress,
     onLogDetails,
     onRefreshLogs,
@@ -362,12 +376,25 @@ export const EnhancedMainTemplate = React.forwardRef<
           <SettingsPanel
             variant={detectedLayout === "mobile" ? "default" : "card"}
             settings={settings}
+            customItems={customSettingsItems}
             showHeader={detectedLayout !== "mobile"}
             compactMode={detectedLayout === "mobile"}
+            sections={{
+              userId: true,
+              appearance: true,
+              notifications: true,
+              behavior: true,
+              data: false,
+              about: false,
+            }}
             onSettingChange={onSettingChange}
             onThemeChange={onThemeChange}
             onClearData={onClearLogs}
             onExportData={onExportLogs}
+            onUserIdSave={onUserIdSave}
+            onUserIdModalOpen={onUserIdModalOpen}
+            userIdLoading={userIdLoading}
+            userIdSaving={userIdSaving}
           />
         );
 

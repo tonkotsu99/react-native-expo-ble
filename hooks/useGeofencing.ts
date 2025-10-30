@@ -1,8 +1,8 @@
-import * as Location from 'expo-location';
-import { useEffect } from 'react';
-import '../tasks/geofencingTask'; // タスク定義ファイルをインポートして登録
+import * as Location from "expo-location";
+import { useEffect } from "react";
+import "../tasks/geofencingTask"; // タスク定義ファイルをインポートして登録
 
-const GEOFENCING_TASK_NAME = 'background-geofencing-task';
+const GEOFENCING_TASK_NAME = "background-geofencing-task";
 
 /**
  * ジオフェンシングのセットアップを行うカスタムフック。
@@ -10,10 +10,12 @@ const GEOFENCING_TASK_NAME = 'background-geofencing-task';
  */
 export const useGeofencing = () => {
   const requestPermissions = async (): Promise<boolean> => {
-    const { status: foregroundStatus } = await Location.requestForegroundPermissionsAsync();
-    if (foregroundStatus === 'granted') {
-      const { status: backgroundStatus } = await Location.requestBackgroundPermissionsAsync();
-      if (backgroundStatus === 'granted') {
+    const { status: foregroundStatus } =
+      await Location.requestForegroundPermissionsAsync();
+    if (foregroundStatus === "granted") {
+      const { status: backgroundStatus } =
+        await Location.requestBackgroundPermissionsAsync();
+      if (backgroundStatus === "granted") {
         return true;
       }
     }
@@ -21,23 +23,32 @@ export const useGeofencing = () => {
   };
 
   const startGeofencing = async (): Promise<void> => {
-    const isTaskStarted = await Location.hasStartedGeofencingAsync(GEOFENCING_TASK_NAME);
+    const isTaskStarted = await Location.hasStartedGeofencingAsync(
+      GEOFENCING_TASK_NAME
+    );
     if (isTaskStarted) {
-      console.log('Geofencing is already started.');
+      console.log("Geofencing is already started.");
+      return;
+    }
+
+    // 位置情報サービスが有効かチェック
+    const locationEnabled = await Location.hasServicesEnabledAsync();
+    if (!locationEnabled) {
+      console.error("Location services are disabled");
       return;
     }
 
     await Location.startGeofencingAsync(GEOFENCING_TASK_NAME, [
       {
-        identifier: 'office-kyutech',
-        latitude: 33.8823, // 九州工業大学の緯度
-        longitude: 130.8797, // 九州工業大学の経度
-        radius: 150, // 半径150m
+        identifier: "office-kyutech",
+        latitude: 33.8935, // 九州工業大学の緯度
+        longitude: 130.8412, // 九州工業大学の経度
+        radius: 1200, // 半径を800mから1200mに拡大して誤判定を減らす
         notifyOnEnter: true,
         notifyOnExit: true,
       },
     ]);
-    console.log('Geofencing started.');
+    console.log("Geofencing started with increased radius: 1200m");
   };
 
   useEffect(() => {
@@ -46,7 +57,9 @@ export const useGeofencing = () => {
       if (hasPermissions) {
         await startGeofencing();
       } else {
-        console.error('位置情報へのバックグラウンドアクセスが許可されていません');
+        console.error(
+          "位置情報へのバックグラウンドアクセスが許可されていません"
+        );
       }
     };
     setupGeofencing();
