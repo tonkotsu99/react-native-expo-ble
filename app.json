@@ -4,6 +4,7 @@
     "slug": "react-native-expo-ble",
     "version": "1.0.0",
     "orientation": "portrait",
+    "icon": "./assets/images/icon.png",
     "scheme": "reactnativeexpoble",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
@@ -13,15 +14,30 @@
     "ios": {
       "supportsTablet": true,
       "infoPlist": {
-        "UIBackgroundModes": ["location"]
-      }
+        "UIBackgroundModes": [
+          "location",
+          "location"
+        ],
+        "ITSAppUsesNonExemptEncryption": false
+      },
+      "bundleIdentifier": "com.nozakimanato.reactnativeexpoble"
     },
     "android": {
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE"
       },
       "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "permissions": [
+        "android.permission.BLUETOOTH",
+        "android.permission.BLUETOOTH_ADMIN",
+        "android.permission.BLUETOOTH_CONNECT",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.ACCESS_BACKGROUND_LOCATION",
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.FOREGROUND_SERVICE_LOCATION"
+      ]
     },
     "web": {
       "output": "static",
@@ -46,7 +62,9 @@
         "react-native-ble-plx",
         {
           "isBackgroundEnabled": true,
-          "modes": ["central"],
+          "modes": [
+            "central"
+          ],
           "bluetoothAlwaysPermission": "バックグランドでBLEデバイスを検知し、在室状況を自動で更新するためにBluetoothへの常時アクセスを強化してください。"
         }
       ],
@@ -62,6 +80,13 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
-    }
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "eb6c47f1-df73-4598-b1e2-46d9eb7b1650"
+      }
+    },
+    "owner": "nozakimanato"
   }
 }
