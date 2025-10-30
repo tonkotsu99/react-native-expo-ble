@@ -14,10 +14,7 @@
     "ios": {
       "supportsTablet": true,
       "infoPlist": {
-        "UIBackgroundModes": [
-          "location",
-          "location"
-        ],
+        "UIBackgroundModes": ["location", "location"],
         "ITSAppUsesNonExemptEncryption": false
       },
       "bundleIdentifier": "com.nozakimanato.reactnativeexpoble"
@@ -62,9 +59,7 @@
         "react-native-ble-plx",
         {
           "isBackgroundEnabled": true,
-          "modes": [
-            "central"
-          ],
+          "modes": ["central"],
           "bluetoothAlwaysPermission": "バックグランドでBLEデバイスを検知し、在室状況を自動で更新するためにBluetoothへの常時アクセスを強化してください。"
         }
       ],
