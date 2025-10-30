@@ -50,83 +50,92 @@ export default function AttendancePage() {
   const colorScheme = useColorScheme();
 
   // 位置情報ベースの状態自動チェック・更新
-  const checkAndUpdateLocationBasedState = useCallback(async (): Promise<void> => {
-    if (!hasPermissions) {
-      console.log("[Auto State Check] 位置情報権限がありません");
-      return;
-    }
-
-    try {
-      const location = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.High,
-        timeInterval: 5000,
-        distanceInterval: 10,
-      });
-
-      const kyutechLat = 33.8935;
-      const kyutechLng = 130.8412;
-      const distance = calculateDistance(
-        location.coords.latitude,
-        location.coords.longitude,
-        kyutechLat,
-        kyutechLng
-      );
-
-      const currentAppState = await getAppState();
-      const withinGeofence = distance <= 1200;
-
-      console.log("[Auto State Check]", {
-        distance: `${Math.round(distance)}m`,
-        withinGeofence,
-        currentState: currentAppState,
-      });
-
-      // 状態の自動修正
-      if (withinGeofence && currentAppState === "OUTSIDE") {
-        await setAppState("INSIDE_AREA");
-        setAppStateLocal("INSIDE_AREA");
-        
-        const autoUpdateLog: LogEntryData = {
-          id: Date.now().toString(),
-          timestamp: new Date(),
-          severity: "success",
-          eventType: "system_event",
-          title: "状態を自動修正",
-          description: `起動時チェック: エリア内にいるため状態を修正 (${Math.round(distance)}m)`,
-          details: {
-            previousState: currentAppState,
-            newState: "INSIDE_AREA",
-            distance: `${Math.round(distance)}m`,
-            reason: "起動時自動チェック",
-          },
-        };
-        setActivityLogs((prev) => [autoUpdateLog, ...prev]);
-        console.log("[Auto State Check] State corrected: OUTSIDE -> INSIDE_AREA");
-      } else if (!withinGeofence && currentAppState === "INSIDE_AREA") {
-        await setAppState("OUTSIDE");
-        setAppStateLocal("OUTSIDE");
-        
-        const autoUpdateLog: LogEntryData = {
-          id: Date.now().toString(),
-          timestamp: new Date(),
-          severity: "info",
-          eventType: "system_event",
-          title: "状態を自動修正",
-          description: `起動時チェック: エリア外のため状態を修正 (${Math.round(distance)}m)`,
-          details: {
-            previousState: currentAppState,
-            newState: "OUTSIDE",
-            distance: `${Math.round(distance)}m`,
-            reason: "起動時自動チェック",
-          },
-        };
-        setActivityLogs((prev) => [autoUpdateLog, ...prev]);
-        console.log("[Auto State Check] State corrected: INSIDE_AREA -> OUTSIDE");
+  const checkAndUpdateLocationBasedState =
+    useCallback(async (): Promise<void> => {
+      if (!hasPermissions) {
+        console.log("[Auto State Check] 位置情報権限がありません");
+        return;
       }
-    } catch (error) {
-      console.error("[Auto State Check] エラー:", error);
-    }
-  }, [hasPermissions]);
+
+      try {
+        const location = await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.High,
+          timeInterval: 5000,
+          distanceInterval: 10,
+        });
+
+        const kyutechLat = 33.8935;
+        const kyutechLng = 130.8412;
+        const distance = calculateDistance(
+          location.coords.latitude,
+          location.coords.longitude,
+          kyutechLat,
+          kyutechLng
+        );
+
+        const currentAppState = await getAppState();
+        const withinGeofence = distance <= 1200;
+
+        console.log("[Auto State Check]", {
+          distance: `${Math.round(distance)}m`,
+          withinGeofence,
+          currentState: currentAppState,
+        });
+
+        // 状態の自動修正
+        if (withinGeofence && currentAppState === "OUTSIDE") {
+          await setAppState("INSIDE_AREA");
+          setAppStateLocal("INSIDE_AREA");
+
+          const autoUpdateLog: LogEntryData = {
+            id: Date.now().toString(),
+            timestamp: new Date(),
+            severity: "success",
+            eventType: "system_event",
+            title: "状態を自動修正",
+            description: `起動時チェック: エリア内にいるため状態を修正 (${Math.round(
+              distance
+            )}m)`,
+            details: {
+              previousState: currentAppState,
+              newState: "INSIDE_AREA",
+              distance: `${Math.round(distance)}m`,
+              reason: "起動時自動チェック",
+            },
+          };
+          setActivityLogs((prev) => [autoUpdateLog, ...prev]);
+          console.log(
+            "[Auto State Check] State corrected: OUTSIDE -> INSIDE_AREA"
+          );
+        } else if (!withinGeofence && currentAppState === "INSIDE_AREA") {
+          await setAppState("OUTSIDE");
+          setAppStateLocal("OUTSIDE");
+
+          const autoUpdateLog: LogEntryData = {
+            id: Date.now().toString(),
+            timestamp: new Date(),
+            severity: "info",
+            eventType: "system_event",
+            title: "状態を自動修正",
+            description: `起動時チェック: エリア外のため状態を修正 (${Math.round(
+              distance
+            )}m)`,
+            details: {
+              previousState: currentAppState,
+              newState: "OUTSIDE",
+              distance: `${Math.round(distance)}m`,
+              reason: "起動時自動チェック",
+            },
+          };
+          setActivityLogs((prev) => [autoUpdateLog, ...prev]);
+          console.log(
+            "[Auto State Check] State corrected: INSIDE_AREA -> OUTSIDE"
+          );
+        }
+      } catch (error) {
+        console.error("[Auto State Check] エラー:", error);
+      }
+    }, [hasPermissions]);
 
   // 2点間の距離計算（ヘーバーサイン公式）
   const calculateDistance = (
@@ -541,7 +550,7 @@ export default function AttendancePage() {
           try {
             await setAppState("INSIDE_AREA");
             setAppStateLocal("INSIDE_AREA");
-            
+
             const updateLog: LogEntryData = {
               id: Date.now().toString(),
               timestamp: new Date(),
@@ -586,6 +595,488 @@ export default function AttendancePage() {
             },
           };
           setActivityLogs((prev) => [warningLog, ...prev]);
+        }
+      },
+    },
+    {
+      id: "testBlePermissions",
+      type: "action" as const,
+      title: "BLE権限をテスト",
+      description: "BLE権限とBluetooth状態を確認",
+      onPress: async () => {
+        try {
+          const hasPerms = await requestPermissions();
+
+          const bleTestLog: LogEntryData = {
+            id: Date.now().toString(),
+            timestamp: new Date(),
+            severity: hasPerms ? "success" : "error",
+            eventType: "system_event",
+            title: "BLE権限テスト",
+            description: `権限: ${hasPerms ? "許可済み" : "拒否"}, Bluetooth: ${
+              bluetoothEnabled ? "有効" : "無効"
+            }`,
+            details: {
+              permissionGranted: hasPerms,
+              bluetoothEnabled: bluetoothEnabled,
+              platform: "iOS",
+            },
+          };
+          setActivityLogs((prev) => [bleTestLog, ...prev]);
+
+          console.log("BLE Permission Test:", {
+            granted: hasPerms,
+            bluetoothEnabled,
+          });
+        } catch (error) {
+          const errorLog: LogEntryData = {
+            id: Date.now().toString(),
+            timestamp: new Date(),
+            severity: "error",
+            eventType: "system_event",
+            title: "BLE権限テストエラー",
+            description: "権限確認に失敗しました",
+            details: {
+              error: error instanceof Error ? error.message : String(error),
+            },
+          };
+          setActivityLogs((prev) => [errorLog, ...prev]);
+        }
+      },
+    },
+    {
+      id: "debugBleScan",
+      type: "action" as const,
+      title: "BLEスキャンをデバッグ",
+      description: "詳細なスキャン情報を表示",
+      onPress: async () => {
+        if (!hasPermissions || !bluetoothEnabled) {
+          const errorLog: LogEntryData = {
+            id: Date.now().toString(),
+            timestamp: new Date(),
+            severity: "warning",
+            eventType: "ble_error",
+            title: "BLEスキャン不可",
+            description: "権限またはBluetoothが無効です",
+            details: {
+              hasPermissions,
+              bluetoothEnabled,
+            },
+          };
+          setActivityLogs((prev) => [errorLog, ...prev]);
+          return;
+        }
+
+        try {
+          // デバッグ用の詳細スキャン
+          console.log("[BLE Debug] Starting detailed scan...");
+          const bleManager = (await import("@/bluetooth/bleManagerInstance"))
+            .bleManager;
+          const BLE_SERVICE_UUID = (await import("@/constants"))
+            .BLE_SERVICE_UUID;
+
+          const startTime = Date.now();
+          let deviceFound = false;
+
+          const debugLog: LogEntryData = {
+            id: Date.now().toString(),
+            timestamp: new Date(),
+            severity: "info",
+            eventType: "ble_scan_started",
+            title: "BLEデバッグスキャン開始",
+            description: `サービスUUID: ${BLE_SERVICE_UUID}`,
+            details: {
+              serviceUUID: BLE_SERVICE_UUID,
+              startTime: new Date().toISOString(),
+            },
+          };
+          setActivityLogs((prev) => [debugLog, ...prev]);
+
+          bleManager.startDeviceScan(
+            [BLE_SERVICE_UUID],
+            null,
+            (error, device) => {
+              if (error) {
+                console.error("[BLE Debug] Scan Error:", error);
+                const errorLog: LogEntryData = {
+                  id: Date.now().toString(),
+                  timestamp: new Date(),
+                  severity: "error",
+                  eventType: "ble_error",
+                  title: "BLEスキャンエラー",
+                  description: error.message || "スキャンに失敗しました",
+                  details: {
+                    error: error.message,
+                    errorCode: error.errorCode,
+                    reason: error.reason,
+                  },
+                };
+                setActivityLogs((prev) => [errorLog, ...prev]);
+                bleManager.stopDeviceScan();
+                return;
+              }
+
+              if (device) {
+                deviceFound = true;
+                console.log("[BLE Debug] Device found:", {
+                  id: device.id,
+                  name: device.name,
+                  rssi: device.rssi,
+                  serviceUUIDs: device.serviceUUIDs,
+                });
+
+                const deviceLog: LogEntryData = {
+                  id: Date.now().toString(),
+                  timestamp: new Date(),
+                  severity: "success",
+                  eventType: "ble_scan_completed",
+                  title: "BLEデバイス発見",
+                  description: `デバイス: ${device.name || "不明"} (${
+                    device.id
+                  })`,
+                  details: {
+                    deviceId: device.id,
+                    deviceName: device.name,
+                    rssi: device.rssi,
+                    serviceUUIDs: device.serviceUUIDs,
+                    scanDuration: `${Date.now() - startTime}ms`,
+                  },
+                };
+                setActivityLogs((prev) => [deviceLog, ...prev]);
+                bleManager.stopDeviceScan();
+              }
+            }
+          );
+
+          // 30秒後にタイムアウト
+          setTimeout(() => {
+            if (!deviceFound) {
+              bleManager.stopDeviceScan();
+              const timeoutLog: LogEntryData = {
+                id: Date.now().toString(),
+                timestamp: new Date(),
+                severity: "warning",
+                eventType: "ble_error",
+                title: "BLEスキャンタイムアウト",
+                description: "30秒間でデバイスが見つかりませんでした",
+                details: {
+                  scanDuration: "30000ms",
+                  serviceUUID: BLE_SERVICE_UUID,
+                  suggestion:
+                    "デバイスの電源とBluetoothアドバタイズを確認してください",
+                },
+              };
+              setActivityLogs((prev) => [timeoutLog, ...prev]);
+              console.log("[BLE Debug] Scan timeout - no devices found");
+            }
+          }, 30000);
+        } catch (error) {
+          const errorLog: LogEntryData = {
+            id: Date.now().toString(),
+            timestamp: new Date(),
+            severity: "error",
+            eventType: "ble_error",
+            title: "BLEデバッグエラー",
+            description: "デバッグスキャンに失敗しました",
+            details: {
+              error: error instanceof Error ? error.message : String(error),
+            },
+          };
+          setActivityLogs((prev) => [errorLog, ...prev]);
+        }
+      },
+    },
+    {
+      id: "scanAllBleDevices",
+      type: "action" as const,
+      title: "全BLEデバイスをスキャン",
+      description: "サービスUUID制限なしでスキャン",
+      onPress: async () => {
+        if (!hasPermissions || !bluetoothEnabled) {
+          const errorLog: LogEntryData = {
+            id: Date.now().toString(),
+            timestamp: new Date(),
+            severity: "warning",
+            eventType: "ble_error",
+            title: "BLEスキャン不可",
+            description: "権限またはBluetoothが無効です",
+            details: {
+              hasPermissions,
+              bluetoothEnabled,
+            },
+          };
+          setActivityLogs((prev) => [errorLog, ...prev]);
+          return;
+        }
+
+        try {
+          console.log("[BLE All Scan] Starting unrestricted scan...");
+          const bleManager = (await import("@/bluetooth/bleManagerInstance"))
+            .bleManager;
+
+          const startTime = Date.now();
+          const foundDevices: any[] = [];
+
+          const scanLog: LogEntryData = {
+            id: Date.now().toString(),
+            timestamp: new Date(),
+            severity: "info",
+            eventType: "ble_scan_started",
+            title: "全BLEデバイススキャン開始",
+            description: "サービスUUID制限なしで20秒間スキャン",
+            details: {
+              scanType: "unrestricted",
+              duration: "20s",
+              startTime: new Date().toISOString(),
+            },
+          };
+          setActivityLogs((prev) => [scanLog, ...prev]);
+
+          // サービスUUID制限なしでスキャン
+          bleManager.startDeviceScan(null, null, (error, device) => {
+            if (error) {
+              console.error("[BLE All Scan] Error:", error);
+              const errorLog: LogEntryData = {
+                id: Date.now().toString(),
+                timestamp: new Date(),
+                severity: "error",
+                eventType: "ble_error",
+                title: "全デバイススキャンエラー",
+                description: error.message || "スキャンに失敗しました",
+                details: {
+                  error: error.message,
+                  errorCode: error.errorCode,
+                },
+              };
+              setActivityLogs((prev) => [errorLog, ...prev]);
+              bleManager.stopDeviceScan();
+              return;
+            }
+
+            if (device && !foundDevices.find((d) => d.id === device.id)) {
+              foundDevices.push({
+                id: device.id,
+                name: device.name || "不明",
+                rssi: device.rssi,
+                serviceUUIDs: device.serviceUUIDs || [],
+              });
+
+              console.log(
+                `[BLE All Scan] Found device: ${device.name || "不明"} (${
+                  device.id
+                })`
+              );
+
+              const deviceLog: LogEntryData = {
+                id: Date.now().toString(),
+                timestamp: new Date(),
+                severity: "info",
+                eventType: "ble_scan_completed",
+                title: `BLEデバイス発見 (#${foundDevices.length})`,
+                description: `${device.name || "不明"} | RSSI: ${
+                  device.rssi
+                }dBm`,
+                details: {
+                  deviceId: device.id,
+                  deviceName: device.name,
+                  rssi: device.rssi,
+                  serviceUUIDs: device.serviceUUIDs,
+                  scanDuration: `${Date.now() - startTime}ms`,
+                },
+              };
+              setActivityLogs((prev) => [deviceLog, ...prev]);
+            }
+          });
+
+          // 20秒後に停止
+          setTimeout(() => {
+            bleManager.stopDeviceScan();
+
+            const resultLog: LogEntryData = {
+              id: Date.now().toString(),
+              timestamp: new Date(),
+              severity: foundDevices.length > 0 ? "success" : "warning",
+              eventType: "ble_scan_completed",
+              title: "全デバイススキャン完了",
+              description: `${foundDevices.length}個のデバイスが見つかりました`,
+              details: {
+                deviceCount: foundDevices.length,
+                scanDuration: "20000ms",
+                devices: foundDevices,
+                targetServiceUUID: "0000180d-0000-1000-8000-00805f9b34fb",
+              },
+            };
+            setActivityLogs((prev) => [resultLog, ...prev]);
+
+            console.log(
+              `[BLE All Scan] Completed. Found ${foundDevices.length} devices:`,
+              foundDevices
+            );
+          }, 20000);
+        } catch (error) {
+          const errorLog: LogEntryData = {
+            id: Date.now().toString(),
+            timestamp: new Date(),
+            severity: "error",
+            eventType: "ble_error",
+            title: "全デバイススキャンエラー",
+            description: "スキャンの開始に失敗しました",
+            details: {
+              error: error instanceof Error ? error.message : String(error),
+            },
+          };
+          setActivityLogs((prev) => [errorLog, ...prev]);
+        }
+      },
+    },
+    {
+      id: "manualBleConnect",
+      type: "action" as const,
+      title: "手動BLE接続テスト",
+      description: "デバイスIDを指定して接続テスト",
+      onPress: async () => {
+        // 実際の実装では、ユーザーがデバイスIDを入力できるUIが必要
+        // ここでは、スキャンで見つかったデバイスがあれば、最初のものに接続を試行
+        try {
+          const bleManager = (await import("@/bluetooth/bleManagerInstance"))
+            .bleManager;
+
+          const testLog: LogEntryData = {
+            id: Date.now().toString(),
+            timestamp: new Date(),
+            severity: "info",
+            eventType: "ble_scan_started",
+            title: "手動BLE接続テスト",
+            description: "利用可能なデバイスを検索して接続を試行",
+          };
+          setActivityLogs((prev) => [testLog, ...prev]);
+
+          console.log(
+            "[Manual BLE] Starting device search for connection test..."
+          );
+
+          let testDevice: any = null;
+
+          bleManager.startDeviceScan(null, null, (error, device) => {
+            if (error) {
+              console.error("[Manual BLE] Scan Error:", error);
+              bleManager.stopDeviceScan();
+              return;
+            }
+
+            if (device && !testDevice) {
+              testDevice = device;
+              bleManager.stopDeviceScan();
+
+              console.log(
+                `[Manual BLE] Attempting to connect to: ${
+                  device.name || device.id
+                }`
+              );
+
+              // 接続テスト
+              device
+                .connect()
+                .then(async (connectedDevice) => {
+                  console.log(
+                    `[Manual BLE] Connection successful: ${connectedDevice.name}`
+                  );
+
+                  const successLog: LogEntryData = {
+                    id: Date.now().toString(),
+                    timestamp: new Date(),
+                    severity: "success",
+                    eventType: "ble_connected",
+                    title: "手動BLE接続成功",
+                    description: `${
+                      connectedDevice.name || "不明"
+                    } に接続しました`,
+                    details: {
+                      deviceId: connectedDevice.id,
+                      deviceName: connectedDevice.name,
+                      rssi: connectedDevice.rssi,
+                    },
+                  };
+                  setActivityLogs((prev) => [successLog, ...prev]);
+
+                  // 5秒後に切断
+                  setTimeout(async () => {
+                    try {
+                      await connectedDevice.cancelConnection();
+                      console.log(
+                        "[Manual BLE] Connection terminated for test"
+                      );
+
+                      const disconnectLog: LogEntryData = {
+                        id: Date.now().toString(),
+                        timestamp: new Date(),
+                        severity: "info",
+                        eventType: "ble_disconnected",
+                        title: "テスト接続切断",
+                        description: "テスト完了のため切断しました",
+                      };
+                      setActivityLogs((prev) => [disconnectLog, ...prev]);
+                    } catch (disconnectError) {
+                      console.error(
+                        "[Manual BLE] Disconnect error:",
+                        disconnectError
+                      );
+                    }
+                  }, 5000);
+                })
+                .catch((connectError) => {
+                  console.error(
+                    `[Manual BLE] Connection failed: ${connectError.message}`
+                  );
+
+                  const failLog: LogEntryData = {
+                    id: Date.now().toString(),
+                    timestamp: new Date(),
+                    severity: "error",
+                    eventType: "ble_error",
+                    title: "手動BLE接続失敗",
+                    description: `${device.name || "不明"} への接続に失敗`,
+                    details: {
+                      deviceId: device.id,
+                      deviceName: device.name,
+                      error: connectError.message,
+                    },
+                  };
+                  setActivityLogs((prev) => [failLog, ...prev]);
+                });
+            }
+          });
+
+          // 10秒でタイムアウト
+          setTimeout(() => {
+            if (!testDevice) {
+              bleManager.stopDeviceScan();
+
+              const timeoutLog: LogEntryData = {
+                id: Date.now().toString(),
+                timestamp: new Date(),
+                severity: "warning",
+                eventType: "ble_error",
+                title: "手動接続テストタイムアウト",
+                description: "接続テスト用のデバイスが見つかりませんでした",
+              };
+              setActivityLogs((prev) => [timeoutLog, ...prev]);
+              console.log("[Manual BLE] No devices found for connection test");
+            }
+          }, 10000);
+        } catch (error) {
+          const errorLog: LogEntryData = {
+            id: Date.now().toString(),
+            timestamp: new Date(),
+            severity: "error",
+            eventType: "ble_error",
+            title: "手動接続テストエラー",
+            description: "接続テストの開始に失敗しました",
+            details: {
+              error: error instanceof Error ? error.message : String(error),
+            },
+          };
+          setActivityLogs((prev) => [errorLog, ...prev]);
         }
       },
     },

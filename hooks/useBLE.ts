@@ -1,5 +1,10 @@
 import { bleManager } from "@/bluetooth/bleManagerInstance";
-import { API_URL_ENTER, API_URL_EXIT, BLE_SERVICE_UUID } from "@/constants";
+import {
+  API_URL_ENTER,
+  API_URL_EXIT,
+  BLE_DEVICE_NAME_PREFIXES,
+  BLE_SERVICE_UUIDS,
+} from "@/constants";
 import { setAppState } from "@/state/appState";
 import { getUserId } from "@/state/userProfile";
 import {
@@ -157,8 +162,15 @@ export const useBLE = (): UseBLE => {
   };
 
   const startScan = async (): Promise<void> => {
+    const normalizedServiceUUIDs = BLE_SERVICE_UUIDS.map((uuid) =>
+      uuid.toLowerCase()
+    );
+    const normalizedNamePrefixes = BLE_DEVICE_NAME_PREFIXES.map((prefix) =>
+      prefix.toLowerCase()
+    );
+
     return new Promise((resolve, reject) => {
-      bleManager.startDeviceScan([BLE_SERVICE_UUID], null, (error, device) => {
+      bleManager.startDeviceScan(BLE_SERVICE_UUIDS, null, (error, device) => {
         if (error) {
           console.error("Scan Error:", error);
           bleManager.stopDeviceScan();
@@ -167,10 +179,38 @@ export const useBLE = (): UseBLE => {
         }
 
         if (device) {
-          bleManager.stopDeviceScan();
-          connectToDevice(device)
-            .then(() => resolve())
-            .catch(reject);
+          const serviceUUIDs = device.serviceUUIDs?.map((uuid) =>
+            uuid.toLowerCase()
+          );
+          const deviceName = device.name?.toLowerCase() ?? "";
+          const matchesService = serviceUUIDs
+            ? serviceUUIDs.some((uuid) => normalizedServiceUUIDs.includes(uuid))
+            : false;
+          const matchesName = normalizedNamePrefixes.some((prefix) =>
+            deviceName.startsWith(prefix)
+          );
+
+          if (matchesService || matchesName) {
+            console.log("[BLE] Target device detected:", {
+              id: device.id,
+              name: device.name,
+              rssi: device.rssi,
+              serviceUUIDs: device.serviceUUIDs,
+            });
+
+            bleManager.stopDeviceScan();
+            connectToDevice(device)
+              .then(() => resolve())
+              .catch(reject);
+          } else {
+            // デバッグ用に検出デバイスをログ出力
+            console.log("[BLE] Ignoring device (does not match target):", {
+              id: device.id,
+              name: device.name,
+              rssi: device.rssi,
+              serviceUUIDs: device.serviceUUIDs,
+            });
+          }
         }
       });
     });

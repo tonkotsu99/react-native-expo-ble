@@ -43,12 +43,11 @@ export const useGeofencing = () => {
         identifier: "office-kyutech",
         latitude: 33.8935, // 九州工業大学の緯度
         longitude: 130.8412, // 九州工業大学の経度
-        radius: 1200, // 半径を800mから1200mに拡大して誤判定を減らす
-        notifyOnEnter: true,
+        radius: 800, // 半径を800m
         notifyOnExit: true,
       },
     ]);
-    console.log("Geofencing started with increased radius: 1200m");
+    console.log("Geofencing started with increased radius: 800m");
   };
 
   useEffect(() => {
