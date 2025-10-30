@@ -1,14 +1,16 @@
 import {
-  sendGeofenceEnterNotification,
-  sendGeofenceExitNotification,
   sendBleConnectedNotification,
   sendBleDisconnectedNotification,
+  sendBlePermissionErrorNotification,
+  sendBluetoothDisabledNotification,
+  sendGeofenceEnterNotification,
+  sendGeofenceExitNotification,
   sendStatePresentNotification,
   sendStateUnconfirmedNotification,
+  sendUserIdLoadingNotification,
+  sendUserIdRequiredNotification,
   sendUserIdSavedNotification,
   sendUserIdSaveFailedNotification,
-  sendUserIdRequiredNotification,
-  sendUserIdLoadingNotification,
 } from "@/utils/notifications";
 
 /**
@@ -27,5 +29,7 @@ export const useNotifications = () => {
     sendUserIdSaveFailedNotification,
     sendUserIdRequiredNotification,
     sendUserIdLoadingNotification,
+    sendBlePermissionErrorNotification,
+    sendBluetoothDisabledNotification,
   };
 };

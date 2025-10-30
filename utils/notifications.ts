@@ -136,10 +136,7 @@ export async function sendUserIdSaveFailedNotification(
  * ユーザーID未設定通知
  */
 export async function sendUserIdRequiredNotification(): Promise<void> {
-  await scheduleNotification(
-    "ユーザーID",
-    "ユーザーIDを設定してください"
-  );
+  await scheduleNotification("ユーザーID", "ユーザーIDを設定してください");
 }
 
 /**
@@ -149,5 +146,25 @@ export async function sendUserIdLoadingNotification(): Promise<void> {
   await scheduleNotification(
     "ユーザーID",
     "ユーザーID読込中です。処理が完了するまでお待ちください。"
+  );
+}
+
+/**
+ * BLE権限エラー通知
+ */
+export async function sendBlePermissionErrorNotification(): Promise<void> {
+  await scheduleNotification(
+    "Bluetooth権限",
+    "Bluetooth権限が必要です。設定からBluetoothを有効にしてください。"
+  );
+}
+
+/**
+ * iOS Bluetooth無効通知
+ */
+export async function sendBluetoothDisabledNotification(): Promise<void> {
+  await scheduleNotification(
+    "Bluetooth無効",
+    "Bluetoothが無効です。設定から有効にしてアプリを再起動してください。"
   );
 }

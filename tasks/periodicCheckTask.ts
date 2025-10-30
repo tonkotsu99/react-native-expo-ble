@@ -1,5 +1,7 @@
+import { Platform } from "react-native";
 import BackgroundFetch from "react-native-background-fetch";
 import type { Device } from "react-native-ble-plx";
+import { State } from "react-native-ble-plx";
 import { bleManager } from "../bluetooth/bleManagerInstance";
 import { API_URL_ENTER, BLE_SERVICE_UUID } from "../constants";
 import type { AppState } from "../state/appState";
@@ -14,6 +16,25 @@ import { postInsideAreaStatus } from "./insideAreaStatus";
 
 const SCAN_TIMEOUT_MS = 15000;
 const LOG_PREFIX = "[Periodic Check]";
+
+/**
+ * iOS/Android両対応のBluetooth権限確認
+ */
+const checkBluetoothPermissions = async (): Promise<boolean> => {
+  if (Platform.OS === "ios") {
+    try {
+      const state = await bleManager.state();
+      console.log(`${LOG_PREFIX} iOS Bluetooth状態: ${state}`);
+      return state === State.PoweredOn;
+    } catch (error) {
+      console.error(`${LOG_PREFIX} iOS Bluetooth状態取得エラー:`, error);
+      return false;
+    }
+  }
+
+  // Androidの場合は従来通り（権限はアプリ起動時に取得済み）
+  return true;
+};
 
 const postEnterAttendance = async (device: Device): Promise<void> => {
   try {
@@ -47,7 +68,16 @@ const postEnterAttendance = async (device: Device): Promise<void> => {
   }
 };
 
-const scanAndReconnect = (previousState: AppState): Promise<boolean> => {
+const scanAndReconnect = async (previousState: AppState): Promise<boolean> => {
+  // 権限チェック
+  const hasPermissions = await checkBluetoothPermissions();
+  if (!hasPermissions) {
+    console.warn(
+      `${LOG_PREFIX} Bluetooth権限がありません。スキャンをスキップします。`
+    );
+    return false;
+  }
+
   return new Promise((resolve) => {
     let settled = false;
 

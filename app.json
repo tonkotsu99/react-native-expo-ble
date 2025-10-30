@@ -15,7 +15,9 @@
       "supportsTablet": true,
       "infoPlist": {
         "UIBackgroundModes": ["location", "location"],
-        "ITSAppUsesNonExemptEncryption": false
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSBluetoothAlwaysUsageDescription": "研究室の在室管理システムでBluetoothビーコンを検知するために必要です。",
+        "NSBluetoothPeripheralUsageDescription": "研究室の在室管理システムでBluetoothビーコンを検知するために必要です。"
       },
       "bundleIdentifier": "com.nozakimanato.reactnativeexpoble"
     },

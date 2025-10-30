@@ -31,7 +31,7 @@ export default function AttendancePage() {
 
     const hasPermissions = await requestPermissions();
     if (!hasPermissions) {
-      console.error("パーミッションがありません");
+      console.error("BLE権限が拒否されました。設定から権限を許可してください。");
       return;
     }
 
