@@ -1,0 +1,590 @@
+import {
+  Bell,
+  ChevronRight,
+  Download,
+  ExternalLink,
+  Info,
+  Palette,
+  RefreshCw,
+  Shield,
+  Trash2,
+} from "@tamagui/lucide-icons";
+import React from "react";
+import type { YStackProps } from "tamagui";
+import { H3, H4, styled, Switch, XStack, YStack } from "tamagui";
+import { M_Text } from "../atoms/M_Text";
+import { ThemeToggleButton } from "../atoms/ThemeToggleButton";
+
+// ベースとなるSettingsPanelスタイル
+const StyledSettingsPanel = styled(YStack, {
+  name: "SettingsPanel",
+
+  variants: {
+    variant: {
+      default: {
+        backgroundColor: "$background",
+        borderRadius: "$6",
+        borderWidth: 1,
+        borderColor: "$borderColor",
+        padding: "$4",
+      },
+      card: {
+        backgroundColor: "$backgroundStrong",
+        borderRadius: "$6",
+        borderWidth: 1,
+        borderColor: "$borderColor",
+        padding: "$4",
+        shadowColor: "$shadowColor",
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 8,
+        elevation: 2,
+      },
+      modal: {
+        backgroundColor: "$background",
+        borderRadius: "$6",
+        padding: "$5",
+        shadowColor: "$shadowColor",
+        shadowOffset: { width: 0, height: 10 },
+        shadowOpacity: 0.15,
+        shadowRadius: 20,
+        elevation: 10,
+      },
+      embedded: {
+        backgroundColor: "transparent",
+        padding: "$2",
+      },
+    },
+  } as const,
+
+  defaultVariants: {
+    variant: "default",
+  },
+});
+
+// 設定セクション
+const SettingsSection = styled(YStack, {
+  name: "SettingsSection",
+  space: "$3",
+  paddingVertical: "$3",
+  borderBottomWidth: 1,
+  borderBottomColor: "$borderColor",
+});
+
+// 設定項目
+const SettingsItem = styled(XStack, {
+  name: "SettingsItem",
+  alignItems: "center",
+  justifyContent: "space-between",
+  paddingVertical: "$2",
+  paddingHorizontal: "$3",
+  borderRadius: "$4",
+  minHeight: 48,
+
+  variants: {
+    interactive: {
+      true: {
+        hoverStyle: {
+          backgroundColor: "$backgroundHover",
+        },
+        pressStyle: {
+          backgroundColor: "$backgroundPress",
+          scale: 0.98,
+        },
+      },
+      false: {},
+    },
+  } as const,
+});
+
+// パネルヘッダー
+const PanelHeader = styled(XStack, {
+  name: "PanelHeader",
+  alignItems: "center",
+  justifyContent: "space-between",
+  paddingBottom: "$4",
+  marginBottom: "$3",
+  borderBottomWidth: 1,
+  borderBottomColor: "$borderColor",
+});
+
+// 設定値の型定義
+export type SettingsValues = {
+  theme: "light" | "dark" | "system";
+  notifications: boolean;
+  autoReconnect: boolean;
+  keepScreenOn: boolean;
+  vibrationFeedback: boolean;
+  logLevel: "info" | "warning" | "error";
+  dataRetentionDays: number;
+  autoExportLogs: boolean;
+};
+
+// 設定項目の定義
+export type SettingItem = {
+  id: string;
+  type: "toggle" | "select" | "action" | "info" | "link";
+  title: string;
+  description?: string;
+  icon?: React.ComponentType<{ size?: number; color?: string }>;
+  value?: any;
+  options?: { label: string; value: any }[];
+  onPress?: () => void;
+  onChange?: (value: any) => void;
+  disabled?: boolean;
+  destructive?: boolean;
+};
+
+// SettingsPanel プロパティ
+export type SettingsPanelProps = YStackProps & {
+  variant?: "default" | "card" | "modal" | "embedded";
+
+  // データ
+  settings: SettingsValues;
+
+  // 表示オプション
+  title?: string;
+  showHeader?: boolean;
+  compactMode?: boolean;
+  sections?: {
+    appearance?: boolean;
+    notifications?: boolean;
+    behavior?: boolean;
+    data?: boolean;
+    about?: boolean;
+  };
+
+  // カスタム設定項目
+  customItems?: SettingItem[];
+
+  // イベントハンドラー
+  onSettingChange?: (key: keyof SettingsValues, value: any) => void;
+  onThemeChange?: (theme: "light" | "dark" | "system") => void;
+  onClearData?: () => void;
+  onExportData?: () => void;
+  onResetSettings?: () => void;
+  onOpenPrivacyPolicy?: () => void;
+  onOpenLicenses?: () => void;
+  onContactSupport?: () => void;
+
+  // アプリ情報
+  appVersion?: string;
+  appBuild?: string;
+
+  accessibilityLabel?: string;
+};
+
+// デフォルトの設定セクション定義
+const getDefaultSections = (
+  settings: SettingsValues,
+  props: SettingsPanelProps
+): { [key: string]: SettingItem[] } => {
+  const {
+    onSettingChange,
+    onThemeChange,
+    onClearData,
+    onExportData,
+    onResetSettings,
+    onOpenPrivacyPolicy,
+    onOpenLicenses,
+    onContactSupport,
+    appVersion,
+    appBuild,
+  } = props;
+
+  return {
+    appearance: [
+      {
+        id: "theme",
+        type: "select",
+        title: "テーマ",
+        description: "アプリの外観テーマを選択",
+        icon: Palette,
+        value: settings.theme,
+        options: [
+          { label: "ライトモード", value: "light" },
+          { label: "ダークモード", value: "dark" },
+          { label: "システム設定に従う", value: "system" },
+        ],
+        onChange: (value) => {
+          onSettingChange?.("theme", value);
+          onThemeChange?.(value);
+        },
+      },
+    ],
+
+    notifications: [
+      {
+        id: "notifications",
+        type: "toggle",
+        title: "プッシュ通知",
+        description: "接続状態の変更通知を受け取る",
+        icon: Bell,
+        value: settings.notifications,
+        onChange: (value) => onSettingChange?.("notifications", value),
+      },
+      {
+        id: "vibrationFeedback",
+        type: "toggle",
+        title: "バイブレーション",
+        description: "アクション実行時の振動フィードバック",
+        value: settings.vibrationFeedback,
+        onChange: (value) => onSettingChange?.("vibrationFeedback", value),
+      },
+    ],
+
+    behavior: [
+      {
+        id: "autoReconnect",
+        type: "toggle",
+        title: "自動再接続",
+        description: "BLE接続が切断された際の自動再接続",
+        value: settings.autoReconnect,
+        onChange: (value) => onSettingChange?.("autoReconnect", value),
+      },
+      {
+        id: "keepScreenOn",
+        type: "toggle",
+        title: "画面常時点灯",
+        description: "アプリ使用中は画面をオンに保つ",
+        value: settings.keepScreenOn,
+        onChange: (value) => onSettingChange?.("keepScreenOn", value),
+      },
+    ],
+
+    data: [
+      {
+        id: "logLevel",
+        type: "select",
+        title: "ログレベル",
+        description: "記録するログの詳細度",
+        value: settings.logLevel,
+        options: [
+          { label: "すべて (情報)", value: "info" },
+          { label: "警告以上", value: "warning" },
+          { label: "エラーのみ", value: "error" },
+        ],
+        onChange: (value) => onSettingChange?.("logLevel", value),
+      },
+      {
+        id: "autoExportLogs",
+        type: "toggle",
+        title: "ログ自動エクスポート",
+        description: "定期的にログファイルを出力",
+        value: settings.autoExportLogs,
+        onChange: (value) => onSettingChange?.("autoExportLogs", value),
+      },
+      {
+        id: "exportData",
+        type: "action",
+        title: "データをエクスポート",
+        description: "ログとデータをファイルに出力",
+        icon: Download,
+        onPress: onExportData,
+      },
+      {
+        id: "clearData",
+        type: "action",
+        title: "データをクリア",
+        description: "すべてのログと履歴を削除",
+        icon: Trash2,
+        onPress: onClearData,
+        destructive: true,
+      },
+      {
+        id: "resetSettings",
+        type: "action",
+        title: "設定をリセット",
+        description: "すべての設定を初期値に戻す",
+        icon: RefreshCw,
+        onPress: onResetSettings,
+        destructive: true,
+      },
+    ],
+
+    about: [
+      ...(appVersion
+        ? [
+            {
+              id: "version",
+              type: "info" as const,
+              title: "バージョン",
+              value: `${appVersion}${appBuild ? ` (${appBuild})` : ""}`,
+              icon: Info,
+            },
+          ]
+        : []),
+      {
+        id: "privacy",
+        type: "link",
+        title: "プライバシーポリシー",
+        icon: Shield,
+        onPress: onOpenPrivacyPolicy,
+      },
+      {
+        id: "licenses",
+        type: "link",
+        title: "ライセンス情報",
+        icon: ExternalLink,
+        onPress: onOpenLicenses,
+      },
+      {
+        id: "support",
+        type: "link",
+        title: "サポートに連絡",
+        icon: ExternalLink,
+        onPress: onContactSupport,
+      },
+    ],
+  };
+};
+
+export const SettingsPanel = React.forwardRef<any, SettingsPanelProps>(
+  (props, ref) => {
+    const {
+      variant = "default",
+      settings,
+      title = "設定",
+      showHeader = true,
+      compactMode = false,
+      sections = {
+        appearance: true,
+        notifications: true,
+        behavior: true,
+        data: true,
+        about: true,
+      },
+      customItems = [],
+      accessibilityLabel,
+      ...restProps
+    } = props;
+
+    const defaultSections = getDefaultSections(settings, props);
+
+    // 設定項目のレンダリング
+    const renderSettingItem = React.useCallback(
+      (item: SettingItem) => {
+        const IconComponent = item.icon;
+
+        return (
+          <SettingsItem
+            key={item.id}
+            interactive={!!(item.onPress || item.onChange)}
+            onPress={
+              item.type === "action" || item.type === "link"
+                ? item.onPress
+                : undefined
+            }
+          >
+            <XStack alignItems="center" space="$3" flex={1}>
+              {IconComponent && (
+                <IconComponent
+                  size={20}
+                  color={item.destructive ? "$red9" : "$color11"}
+                />
+              )}
+
+              <YStack flex={1}>
+                <M_Text
+                  fontSize={compactMode ? "$3" : "$4"}
+                  fontWeight="500"
+                  color={item.destructive ? "$red11" : "$color"}
+                >
+                  {item.title}
+                </M_Text>
+                {item.description && !compactMode && (
+                  <M_Text fontSize="$2" color="$color11" opacity={0.8}>
+                    {item.description}
+                  </M_Text>
+                )}
+              </YStack>
+            </XStack>
+
+            {/* 設定値とコントロール */}
+            <XStack alignItems="center" space="$2">
+              {item.type === "toggle" && (
+                <Switch
+                  size="$2"
+                  checked={item.value}
+                  onCheckedChange={item.onChange}
+                  disabled={item.disabled}
+                />
+              )}
+
+              {item.type === "select" && (
+                <XStack alignItems="center" space="$2">
+                  <M_Text fontSize="$3" color="$color11">
+                    {item.options?.find((opt) => opt.value === item.value)
+                      ?.label || item.value}
+                  </M_Text>
+                  <ChevronRight size={16} color="$color11" />
+                </XStack>
+              )}
+
+              {item.type === "info" && (
+                <M_Text fontSize="$3" color="$color11">
+                  {item.value}
+                </M_Text>
+              )}
+
+              {(item.type === "action" || item.type === "link") && (
+                <ChevronRight
+                  size={16}
+                  color={item.destructive ? "$red9" : "$color11"}
+                />
+              )}
+            </XStack>
+          </SettingsItem>
+        );
+      },
+      [compactMode]
+    );
+
+    // アクセシビリティプロパティ
+    const accessibilityProps = {
+      accessibilityLabel: accessibilityLabel || "設定パネル",
+      accessible: true,
+    };
+
+    return (
+      <StyledSettingsPanel
+        ref={ref}
+        variant={variant}
+        space={compactMode ? "$2" : "$3"}
+        {...accessibilityProps}
+        {...restProps}
+      >
+        {/* ヘッダー */}
+        {showHeader && (
+          <PanelHeader>
+            <H3 fontSize="$6" fontWeight="700" color="$color">
+              {title}
+            </H3>
+
+            {!compactMode && (
+              <ThemeToggleButton
+                size="medium"
+                onThemeChange={props.onThemeChange}
+              />
+            )}
+          </PanelHeader>
+        )}
+
+        {/* 外観設定 */}
+        {sections.appearance && (
+          <SettingsSection>
+            <H4 fontSize="$4" fontWeight="600" color="$color" marginBottom="$2">
+              外観
+            </H4>
+            {defaultSections.appearance.map(renderSettingItem)}
+          </SettingsSection>
+        )}
+
+        {/* 通知設定 */}
+        {sections.notifications && (
+          <SettingsSection>
+            <H4 fontSize="$4" fontWeight="600" color="$color" marginBottom="$2">
+              通知
+            </H4>
+            {defaultSections.notifications.map(renderSettingItem)}
+          </SettingsSection>
+        )}
+
+        {/* 動作設定 */}
+        {sections.behavior && (
+          <SettingsSection>
+            <H4 fontSize="$4" fontWeight="600" color="$color" marginBottom="$2">
+              動作
+            </H4>
+            {defaultSections.behavior.map(renderSettingItem)}
+          </SettingsSection>
+        )}
+
+        {/* データ設定 */}
+        {sections.data && (
+          <SettingsSection>
+            <H4 fontSize="$4" fontWeight="600" color="$color" marginBottom="$2">
+              データ管理
+            </H4>
+            {defaultSections.data.map(renderSettingItem)}
+          </SettingsSection>
+        )}
+
+        {/* カスタム設定項目 */}
+        {customItems.length > 0 && (
+          <SettingsSection>
+            <H4 fontSize="$4" fontWeight="600" color="$color" marginBottom="$2">
+              その他
+            </H4>
+            {customItems.map(renderSettingItem)}
+          </SettingsSection>
+        )}
+
+        {/* アプリ情報 */}
+        {sections.about && (
+          <SettingsSection borderBottomWidth={0}>
+            <H4 fontSize="$4" fontWeight="600" color="$color" marginBottom="$2">
+              アプリ情報
+            </H4>
+            {defaultSections.about.map(renderSettingItem)}
+          </SettingsSection>
+        )}
+      </StyledSettingsPanel>
+    );
+  }
+);
+
+SettingsPanel.displayName = "SettingsPanel";
+
+// プリセットコンポーネント
+export const CompactSettingsPanel = React.forwardRef<
+  any,
+  Omit<SettingsPanelProps, "variant" | "compactMode">
+>((props, ref) => (
+  <SettingsPanel
+    ref={ref}
+    variant="embedded"
+    compactMode={true}
+    showHeader={false}
+    sections={{
+      appearance: true,
+      notifications: false,
+      behavior: true,
+      data: false,
+      about: false,
+    }}
+    {...props}
+  />
+));
+
+export const ModalSettingsPanel = React.forwardRef<
+  any,
+  Omit<SettingsPanelProps, "variant">
+>((props, ref) => <SettingsPanel ref={ref} variant="modal" {...props} />);
+
+export const CardSettingsPanel = React.forwardRef<
+  any,
+  Omit<SettingsPanelProps, "variant">
+>((props, ref) => <SettingsPanel ref={ref} variant="card" {...props} />);
+
+export const EssentialSettingsPanel = React.forwardRef<
+  any,
+  Omit<SettingsPanelProps, "sections">
+>((props, ref) => (
+  <SettingsPanel
+    ref={ref}
+    sections={{
+      appearance: true,
+      notifications: true,
+      behavior: false,
+      data: false,
+      about: false,
+    }}
+    {...props}
+  />
+));
+
+CompactSettingsPanel.displayName = "CompactSettingsPanel";
+ModalSettingsPanel.displayName = "ModalSettingsPanel";
+CardSettingsPanel.displayName = "CardSettingsPanel";
+EssentialSettingsPanel.displayName = "EssentialSettingsPanel";
