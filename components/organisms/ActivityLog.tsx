@@ -7,10 +7,9 @@ import {
   RefreshCw,
   Trash2,
 } from "@tamagui/lucide-icons";
-import React from "react";
-import { ScrollView } from "react-native";
+import { forwardRef, useCallback, useMemo, useState } from "react";
 import type { YStackProps } from "tamagui";
-import { H3, styled, XStack, YStack } from "tamagui";
+import { H3, ScrollView, styled, XStack, YStack } from "tamagui";
 import { IconButton } from "../atoms/IconButton";
 import { M_Text } from "../atoms/M_Text";
 import {
@@ -219,265 +218,263 @@ const sortLogs = (
   }
 };
 
-export const ActivityLog = React.forwardRef<any, ActivityLogProps>(
-  (props, ref) => {
-    const {
-      variant = "default",
-      size = "medium",
-      logs,
-      isLoading = false,
-      hasMore = false,
-      title = "アクティビティログ",
-      showHeader = true,
-      showControls = true,
-      maxEntries = 50,
-      entryVariant = "default",
-      filter,
-      sortBy = "newest",
-      showFilterControls = false,
-      onLogPress,
-      onLogDetails,
-      onRefresh,
-      onLoadMore,
-      onClearAll,
-      onExport,
-      onFilterChange,
-      onSortChange,
-      isRefreshing = false,
-      canClear = true,
-      canExport = true,
-      accessibilityLabel,
-      ...restProps
-    } = props;
+export const ActivityLog = forwardRef<any, ActivityLogProps>((props, ref) => {
+  const {
+    variant = "default",
+    size = "medium",
+    logs,
+    isLoading = false,
+    hasMore = false,
+    title = "アクティビティログ",
+    showHeader = true,
+    showControls = true,
+    maxEntries = 50,
+    entryVariant = "default",
+    filter,
+    sortBy = "newest",
+    showFilterControls = false,
+    onLogPress,
+    onLogDetails,
+    onRefresh,
+    onLoadMore,
+    onClearAll,
+    onExport,
+    onFilterChange,
+    onSortChange,
+    isRefreshing = false,
+    canClear = true,
+    canExport = true,
+    accessibilityLabel,
+    ...restProps
+  } = props;
 
-    // フィルター表示状態
-    const [showFilters, setShowFilters] = React.useState(false);
+  // フィルター表示状態
+  const [showFilters, setShowFilters] = useState(false);
 
-    // ログを処理（フィルター、ソート、制限）
-    const processedLogs = React.useMemo(() => {
-      let filtered = filterLogs(logs, filter);
-      let sorted = sortLogs(filtered, sortBy);
+  // ログを処理（フィルター、ソート、制限）
+  const processedLogs = useMemo(() => {
+    let filtered = filterLogs(logs, filter);
+    let sorted = sortLogs(filtered, sortBy);
 
-      if (maxEntries > 0) {
-        sorted = sorted.slice(0, maxEntries);
-      }
+    if (maxEntries > 0) {
+      sorted = sorted.slice(0, maxEntries);
+    }
 
-      return sorted;
-    }, [logs, filter, sortBy, maxEntries]);
+    return sorted;
+  }, [logs, filter, sortBy, maxEntries]);
 
-    // 統計情報
-    const stats = React.useMemo(() => {
-      const total = logs.length;
-      const errors = logs.filter((log) => log.severity === "error").length;
-      const warnings = logs.filter((log) => log.severity === "warning").length;
-      const filtered = processedLogs.length;
+  // 統計情報
+  const stats = useMemo(() => {
+    const total = logs.length;
+    const errors = logs.filter((log) => log.severity === "error").length;
+    const warnings = logs.filter((log) => log.severity === "warning").length;
+    const filtered = processedLogs.length;
 
-      return { total, errors, warnings, filtered };
-    }, [logs, processedLogs]);
+    return { total, errors, warnings, filtered };
+  }, [logs, processedLogs]);
 
-    // 更新処理
-    const handleRefresh = React.useCallback(() => {
-      onRefresh?.();
-    }, [onRefresh]);
+  // 更新処理
+  const handleRefresh = useCallback(() => {
+    onRefresh?.();
+  }, [onRefresh]);
 
-    // クリア処理
-    const handleClearAll = React.useCallback(() => {
-      onClearAll?.();
-    }, [onClearAll]);
+  // クリア処理
+  const handleClearAll = useCallback(() => {
+    onClearAll?.();
+  }, [onClearAll]);
 
-    // エクスポート処理
-    const handleExport = React.useCallback(() => {
-      onExport?.();
-    }, [onExport]);
+  // エクスポート処理
+  const handleExport = useCallback(() => {
+    onExport?.();
+  }, [onExport]);
 
-    // フィルター切り替え
-    const toggleFilters = React.useCallback(() => {
-      setShowFilters((prev) => !prev);
-    }, []);
+  // フィルター切り替え
+  const toggleFilters = useCallback(() => {
+    setShowFilters((prev) => !prev);
+  }, []);
 
-    // ログエントリー押下処理
-    const handleLogPress = React.useCallback(
-      (log: LogEntryData) => {
-        onLogPress?.(log);
-      },
-      [onLogPress]
-    );
+  // ログエントリー押下処理
+  const handleLogPress = useCallback(
+    (log: LogEntryData) => {
+      onLogPress?.(log);
+    },
+    [onLogPress]
+  );
 
-    // ログ詳細表示処理
-    const handleLogDetails = React.useCallback(
-      (log: LogEntryData) => {
-        onLogDetails?.(log);
-      },
-      [onLogDetails]
-    );
+  // ログ詳細表示処理
+  const handleLogDetails = useCallback(
+    (log: LogEntryData) => {
+      onLogDetails?.(log);
+    },
+    [onLogDetails]
+  );
 
-    // スクロール終了時の処理（追加読み込み）
-    const handleLoadMore = React.useCallback(() => {
-      if (hasMore && !isLoading) {
-        onLoadMore?.();
-      }
-    }, [hasMore, isLoading, onLoadMore]);
+  // スクロール終了時の処理（追加読み込み）
+  const handleLoadMore = useCallback(() => {
+    if (hasMore && !isLoading) {
+      onLoadMore?.();
+    }
+  }, [hasMore, isLoading, onLoadMore]);
 
-    // アクセシビリティプロパティ
-    const accessibilityProps = {
-      accessibilityLabel:
-        accessibilityLabel ||
-        `アクティビティログ: ${stats.filtered}件のエントリー`,
-      accessible: true,
-    };
+  // アクセシビリティプロパティ
+  const accessibilityProps = {
+    accessibilityLabel:
+      accessibilityLabel ||
+      `アクティビティログ: ${stats.filtered}件のエントリー`,
+    accessible: true,
+  };
 
-    return (
-      <StyledActivityLog
-        ref={ref}
-        variant={variant}
-        size={size}
-        {...accessibilityProps}
-        {...restProps}
-      >
-        {/* ヘッダー */}
-        {showHeader && (
-          <LogHeader>
-            <YStack flex={1}>
-              <H3 fontSize="$5" fontWeight="600" color="$color">
-                {title}
-              </H3>
-              <XStack alignItems="center" space="$2">
-                <M_Text fontSize="$2" color="$color11">
-                  {stats.filtered} / {stats.total} エントリー
-                </M_Text>
-                {stats.errors > 0 && (
-                  <XStack alignItems="center" space="$1">
-                    <AlertCircle size={12} color="$red9" />
-                    <M_Text fontSize="$2" color="$red9">
-                      {stats.errors}
-                    </M_Text>
-                  </XStack>
-                )}
-                {stats.warnings > 0 && (
-                  <XStack alignItems="center" space="$1">
-                    <Clock size={12} color="$orange9" />
-                    <M_Text fontSize="$2" color="$orange9">
-                      {stats.warnings}
-                    </M_Text>
-                  </XStack>
-                )}
-              </XStack>
-            </YStack>
+  return (
+    <StyledActivityLog
+      ref={ref}
+      variant={variant}
+      size={size}
+      {...accessibilityProps}
+      {...restProps}
+    >
+      {/* ヘッダー */}
+      {showHeader && (
+        <LogHeader>
+          <YStack flex={1}>
+            <H3 fontSize="$5" fontWeight="600" color="$color">
+              {title}
+            </H3>
+            <XStack alignItems="center" space="$2">
+              <M_Text fontSize="$2" color="$color11">
+                {stats.filtered} / {stats.total} エントリー
+              </M_Text>
+              {stats.errors > 0 && (
+                <XStack alignItems="center" space="$1">
+                  <AlertCircle size={12} color="$red9" />
+                  <M_Text fontSize="$2" color="$red9">
+                    {stats.errors}
+                  </M_Text>
+                </XStack>
+              )}
+              {stats.warnings > 0 && (
+                <XStack alignItems="center" space="$1">
+                  <Clock size={12} color="$orange9" />
+                  <M_Text fontSize="$2" color="$orange9">
+                    {stats.warnings}
+                  </M_Text>
+                </XStack>
+              )}
+            </XStack>
+          </YStack>
 
-            {/* コントロールボタン */}
-            {showControls && (
-              <XStack alignItems="center" space="$2">
-                {showFilterControls && (
-                  <IconButton
-                    size="small"
-                    variant="ghost"
-                    icon={showFilters ? ChevronUp : ChevronDown}
-                    onPress={toggleFilters}
-                    accessibilityLabel="フィルターを切り替え"
-                  />
-                )}
-
+          {/* コントロールボタン */}
+          {showControls && (
+            <XStack alignItems="center" space="$2">
+              {showFilterControls && (
                 <IconButton
                   size="small"
                   variant="ghost"
-                  icon={RefreshCw}
-                  onPress={handleRefresh}
-                  disabled={isRefreshing}
-                  accessibilityLabel="ログを更新"
+                  icon={showFilters ? ChevronUp : ChevronDown}
+                  onPress={toggleFilters}
+                  accessibilityLabel="フィルターを切り替え"
                 />
+              )}
 
-                {canExport && (
-                  <IconButton
-                    size="small"
-                    variant="ghost"
-                    icon={Download}
-                    onPress={handleExport}
-                    accessibilityLabel="ログをエクスポート"
-                  />
-                )}
+              <IconButton
+                size="small"
+                variant="ghost"
+                icon={RefreshCw}
+                onPress={handleRefresh}
+                disabled={isRefreshing}
+                accessibilityLabel="ログを更新"
+              />
 
-                {canClear && (
-                  <IconButton
-                    size="small"
-                    variant="ghost"
-                    icon={Trash2}
-                    onPress={handleClearAll}
-                    accessibilityLabel="ログをクリア"
-                  />
-                )}
-              </XStack>
-            )}
-          </LogHeader>
-        )}
+              {canExport && (
+                <IconButton
+                  size="small"
+                  variant="ghost"
+                  icon={Download}
+                  onPress={handleExport}
+                  accessibilityLabel="ログをエクスポート"
+                />
+              )}
 
-        {/* フィルターコントロール */}
-        {showFilters && showFilterControls && (
-          <YStack
-            padding="$3"
-            borderBottomWidth={1}
-            borderBottomColor="$borderColor"
-          >
+              {canClear && (
+                <IconButton
+                  size="small"
+                  variant="ghost"
+                  icon={Trash2}
+                  onPress={handleClearAll}
+                  accessibilityLabel="ログをクリア"
+                />
+              )}
+            </XStack>
+          )}
+        </LogHeader>
+      )}
+
+      {/* フィルターコントロール */}
+      {showFilters && showFilterControls && (
+        <YStack
+          padding="$3"
+          borderBottomWidth={1}
+          borderBottomColor="$borderColor"
+        >
+          <M_Text fontSize="$3" color="$color11">
+            フィルター機能は実装予定です
+          </M_Text>
+        </YStack>
+      )}
+
+      {/* ログエントリーリスト */}
+      <LogContent>
+        {isLoading && processedLogs.length === 0 ? (
+          <YStack alignItems="center" justifyContent="center" padding="$6">
             <M_Text fontSize="$3" color="$color11">
-              フィルター機能は実装予定です
+              ログを読み込み中...
             </M_Text>
           </YStack>
+        ) : processedLogs.length === 0 ? (
+          <YStack alignItems="center" justifyContent="center" padding="$6">
+            <M_Text fontSize="$3" color="$color11" textAlign="center">
+              表示するログエントリーがありません
+            </M_Text>
+          </YStack>
+        ) : (
+          <ScrollView
+            showsVerticalScrollIndicator={true}
+            onMomentumScrollEnd={handleLoadMore}
+          >
+            <LogEntryList>
+              {processedLogs.map((log) => (
+                <LogEntry
+                  key={log.id}
+                  logData={log}
+                  variant={entryVariant}
+                  onPress={onLogPress ? () => handleLogPress(log) : undefined}
+                  onShowDetails={
+                    onLogDetails ? () => handleLogDetails(log) : undefined
+                  }
+                />
+              ))}
+
+              {/* 追加読み込みインジケーター */}
+              {hasMore && (
+                <YStack alignItems="center" padding="$3">
+                  <M_Text fontSize="$2" color="$color11">
+                    {isLoading
+                      ? "読み込み中..."
+                      : "スクロールして続きを読み込み"}
+                  </M_Text>
+                </YStack>
+              )}
+            </LogEntryList>
+          </ScrollView>
         )}
-
-        {/* ログエントリーリスト */}
-        <LogContent>
-          {isLoading && processedLogs.length === 0 ? (
-            <YStack alignItems="center" justifyContent="center" padding="$6">
-              <M_Text fontSize="$3" color="$color11">
-                ログを読み込み中...
-              </M_Text>
-            </YStack>
-          ) : processedLogs.length === 0 ? (
-            <YStack alignItems="center" justifyContent="center" padding="$6">
-              <M_Text fontSize="$3" color="$color11" textAlign="center">
-                表示するログエントリーがありません
-              </M_Text>
-            </YStack>
-          ) : (
-            <ScrollView
-              showsVerticalScrollIndicator={true}
-              onMomentumScrollEnd={handleLoadMore}
-            >
-              <LogEntryList>
-                {processedLogs.map((log) => (
-                  <LogEntry
-                    key={log.id}
-                    logData={log}
-                    variant={entryVariant}
-                    onPress={onLogPress ? () => handleLogPress(log) : undefined}
-                    onShowDetails={
-                      onLogDetails ? () => handleLogDetails(log) : undefined
-                    }
-                  />
-                ))}
-
-                {/* 追加読み込みインジケーター */}
-                {hasMore && (
-                  <YStack alignItems="center" padding="$3">
-                    <M_Text fontSize="$2" color="$color11">
-                      {isLoading
-                        ? "読み込み中..."
-                        : "スクロールして続きを読み込み"}
-                    </M_Text>
-                  </YStack>
-                )}
-              </LogEntryList>
-            </ScrollView>
-          )}
-        </LogContent>
-      </StyledActivityLog>
-    );
-  }
-);
+      </LogContent>
+    </StyledActivityLog>
+  );
+});
 
 ActivityLog.displayName = "ActivityLog";
 
 // プリセットコンポーネント
-export const CompactActivityLog = React.forwardRef<
+export const CompactActivityLog = forwardRef<
   any,
   Omit<ActivityLogProps, "variant" | "size" | "entryVariant">
 >((props, ref) => (
@@ -492,12 +489,12 @@ export const CompactActivityLog = React.forwardRef<
   />
 ));
 
-export const CardActivityLog = React.forwardRef<
+export const CardActivityLog = forwardRef<
   any,
   Omit<ActivityLogProps, "variant">
 >((props, ref) => <ActivityLog ref={ref} variant="card" {...props} />);
 
-export const PanelActivityLog = React.forwardRef<
+export const PanelActivityLog = forwardRef<
   any,
   Omit<ActivityLogProps, "variant">
 >((props, ref) => (
@@ -510,7 +507,7 @@ export const PanelActivityLog = React.forwardRef<
   />
 ));
 
-export const DetailedActivityLog = React.forwardRef<
+export const DetailedActivityLog = forwardRef<
   any,
   Omit<ActivityLogProps, "entryVariant" | "size">
 >((props, ref) => (

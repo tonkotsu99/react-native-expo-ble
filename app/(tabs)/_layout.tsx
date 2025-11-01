@@ -11,15 +11,28 @@ export default function TabsLayout() {
     <Tabs
       screenOptions={{
         headerShown: false,
+        // タブボタンのタッチターゲットを拡大
+        tabBarStyle: {
+          height: 72,
+          paddingVertical: 8,
+        },
+        tabBarItemStyle: {
+          paddingVertical: 6,
+          minHeight: 56,
+        },
+        tabBarLabelStyle: {
+          fontSize: 12,
+          marginTop: 2,
+        },
       }}
     >
       <Tabs.Screen
         name="index"
         options={{
           title: "Dashboard",
-          tabBarIcon: ({ color, size }) => (
+          tabBarIcon: ({ color }) => (
             // lucide icons don't use size/color props directly in RN, but keep minimal here
-            <Activity color={color as any} size={size as any} />
+            <Activity color={color as any} size={28 as any} />
           ),
         }}
       />
@@ -27,8 +40,8 @@ export default function TabsLayout() {
         name="connection"
         options={{
           title: "Connection",
-          tabBarIcon: ({ color, size }) => (
-            <Wifi color={color as any} size={size as any} />
+          tabBarIcon: ({ color }) => (
+            <Wifi color={color as any} size={28 as any} />
           ),
         }}
       />
@@ -36,8 +49,8 @@ export default function TabsLayout() {
         name="settings"
         options={{
           title: "Settings",
-          tabBarIcon: ({ color, size }) => (
-            <SettingsIcon color={color as any} size={size as any} />
+          tabBarIcon: ({ color }) => (
+            <SettingsIcon color={color as any} size={28 as any} />
           ),
         }}
       />

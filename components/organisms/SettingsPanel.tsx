@@ -1,13 +1,9 @@
 import {
   Bell,
   ChevronRight,
-  Download,
   ExternalLink,
   Info,
-  Palette,
-  RefreshCw,
   Shield,
-  Trash2,
   User,
 } from "@tamagui/lucide-icons";
 import React from "react";
@@ -185,193 +181,7 @@ export type SettingsPanelProps = YStackProps & {
   accessibilityLabel?: string;
 };
 
-// デフォルトの設定セクション定義
-const getDefaultSections = (
-  settings: SettingsValues,
-  props: SettingsPanelProps
-): { [key: string]: SettingItem[] } => {
-  const {
-    onSettingChange,
-    onThemeChange,
-    onClearData,
-    onExportData,
-    onResetSettings,
-    onOpenPrivacyPolicy,
-    onOpenLicenses,
-    onContactSupport,
-    onUserIdModalOpen,
-    userIdLoading,
-    userIdSaving,
-    appVersion,
-    appBuild,
-  } = props;
-
-  return {
-    userId: [
-      {
-        id: "userId",
-        type: "info",
-        title: "ユーザーID",
-        description: settings.userId
-          ? `現在設定中: ${settings.userId}`
-          : "未設定 - BLE操作には設定が必要です",
-        icon: User,
-        value: settings.userId || "未設定",
-      },
-      {
-        id: "userIdEdit",
-        type: "action",
-        title: "ユーザーIDを変更",
-        description: "新しいユーザーIDを設定または変更",
-        disabled: userIdLoading || userIdSaving,
-        onPress: onUserIdModalOpen,
-      },
-    ],
-    appearance: [
-      {
-        id: "theme",
-        type: "select",
-        title: "テーマ",
-        description: "アプリの外観テーマを選択",
-        icon: Palette,
-        value: settings.theme,
-        options: [
-          { label: "ライトモード", value: "light" },
-          { label: "ダークモード", value: "dark" },
-          { label: "システム設定に従う", value: "system" },
-        ],
-        onChange: (value) => {
-          onSettingChange?.("theme", value);
-          onThemeChange?.(value);
-        },
-      },
-    ],
-
-    notifications: [
-      {
-        id: "notifications",
-        type: "toggle",
-        title: "プッシュ通知",
-        description: "接続状態の変更通知を受け取る",
-        icon: Bell,
-        value: settings.notifications,
-        onChange: (value) => onSettingChange?.("notifications", value),
-      },
-      {
-        id: "vibrationFeedback",
-        type: "toggle",
-        title: "バイブレーション",
-        description: "アクション実行時の振動フィードバック",
-        value: settings.vibrationFeedback,
-        onChange: (value) => onSettingChange?.("vibrationFeedback", value),
-      },
-    ],
-
-    behavior: [
-      {
-        id: "autoReconnect",
-        type: "toggle",
-        title: "自動再接続",
-        description: "BLE接続が切断された際の自動再接続",
-        value: settings.autoReconnect,
-        onChange: (value) => onSettingChange?.("autoReconnect", value),
-      },
-      {
-        id: "keepScreenOn",
-        type: "toggle",
-        title: "画面常時点灯",
-        description: "アプリ使用中は画面をオンに保つ",
-        value: settings.keepScreenOn,
-        onChange: (value) => onSettingChange?.("keepScreenOn", value),
-      },
-    ],
-
-    data: [
-      {
-        id: "logLevel",
-        type: "select",
-        title: "ログレベル",
-        description: "記録するログの詳細度",
-        value: settings.logLevel,
-        options: [
-          { label: "すべて (情報)", value: "info" },
-          { label: "警告以上", value: "warning" },
-          { label: "エラーのみ", value: "error" },
-        ],
-        onChange: (value) => onSettingChange?.("logLevel", value),
-      },
-      {
-        id: "autoExportLogs",
-        type: "toggle",
-        title: "ログ自動エクスポート",
-        description: "定期的にログファイルを出力",
-        value: settings.autoExportLogs,
-        onChange: (value) => onSettingChange?.("autoExportLogs", value),
-      },
-      {
-        id: "exportData",
-        type: "action",
-        title: "データをエクスポート",
-        description: "ログとデータをファイルに出力",
-        icon: Download,
-        onPress: onExportData,
-      },
-      {
-        id: "clearData",
-        type: "action",
-        title: "データをクリア",
-        description: "すべてのログと履歴を削除",
-        icon: Trash2,
-        onPress: onClearData,
-        destructive: true,
-      },
-      {
-        id: "resetSettings",
-        type: "action",
-        title: "設定をリセット",
-        description: "すべての設定を初期値に戻す",
-        icon: RefreshCw,
-        onPress: onResetSettings,
-        destructive: true,
-      },
-    ],
-
-    about: [
-      ...(appVersion
-        ? [
-            {
-              id: "version",
-              type: "info" as const,
-              title: "バージョン",
-              value: `${appVersion}${appBuild ? ` (${appBuild})` : ""}`,
-              icon: Info,
-            },
-          ]
-        : []),
-      {
-        id: "privacy",
-        type: "link",
-        title: "プライバシーポリシー",
-        icon: Shield,
-        onPress: onOpenPrivacyPolicy,
-      },
-      {
-        id: "licenses",
-        type: "link",
-        title: "ライセンス情報",
-        icon: ExternalLink,
-        onPress: onOpenLicenses,
-      },
-      {
-        id: "support",
-        type: "link",
-        title: "サポートに連絡",
-        icon: ExternalLink,
-        onPress: onContactSupport,
-      },
-    ],
-  };
-};
+// デフォルトの設定セクション定義はコンポーネント内で構築（ユーザーIDのドラフト管理のため）
 
 export const SettingsPanel = React.forwardRef<any, SettingsPanelProps>(
   (props, ref) => {
@@ -393,7 +203,125 @@ export const SettingsPanel = React.forwardRef<any, SettingsPanelProps>(
       ...restProps
     } = props;
 
-    const defaultSections = getDefaultSections(settings, props);
+    // ユーザーIDのドラフト入力を内部状態で管理
+    const [draftUserId, setDraftUserId] = React.useState(settings.userId ?? "");
+    React.useEffect(() => {
+      setDraftUserId(settings.userId ?? "");
+    }, [settings.userId]);
+
+    // デフォルトセクションの構築（appearance は非表示だが互換のため残置）
+    const defaultSections: { [key: string]: SettingItem[] } = {
+      userId: [
+        {
+          id: "userId",
+          type: "info",
+          title: "ユーザーID",
+          description: settings.userId
+            ? `現在設定中: ${settings.userId}`
+            : "未設定 - BLE操作には設定が必要です",
+          icon: User,
+          value: settings.userId || "未設定",
+        },
+        {
+          id: "userIdInput",
+          type: "input",
+          title: "ユーザーID入力",
+          placeholder: "ユーザーIDを入力",
+          value: draftUserId,
+          onChange: (val: string) => setDraftUserId(val),
+          disabled: restProps.userIdLoading || restProps.userIdSaving,
+          keyboardType: "default",
+        },
+        {
+          id: "userIdSaveInline",
+          type: "action",
+          title: "ユーザーIDを保存",
+          description: "この値で保存",
+          onPress: () => restProps.onUserIdSave?.(draftUserId),
+          disabled:
+            !!restProps.userIdLoading ||
+            !!restProps.userIdSaving ||
+            !draftUserId.trim(),
+        },
+        {
+          id: "userIdEdit",
+          type: "action",
+          title: "ユーザーIDを変更 (モーダル)",
+          description: "モーダルで詳細に編集",
+          disabled: restProps.userIdLoading || restProps.userIdSaving,
+          onPress: restProps.onUserIdModalOpen,
+        },
+      ],
+      notifications: [
+        {
+          id: "notifications",
+          type: "toggle",
+          title: "プッシュ通知",
+          description: "接続状態の変更通知を受け取る",
+          icon: Bell,
+          value: settings.notifications,
+          onChange: (value) =>
+            restProps.onSettingChange?.("notifications", value),
+        },
+        {
+          id: "vibrationFeedback",
+          type: "toggle",
+          title: "バイブレーション",
+          description: "アクション実行時の振動フィードバック",
+          value: settings.vibrationFeedback,
+          onChange: (value) =>
+            restProps.onSettingChange?.("vibrationFeedback", value),
+        },
+      ],
+
+      behavior: [
+        {
+          id: "autoReconnect",
+          type: "toggle",
+          title: "自動再接続",
+          description: "BLE接続が切断された際の自動再接続",
+          value: settings.autoReconnect,
+          onChange: (value) =>
+            restProps.onSettingChange?.("autoReconnect", value),
+        },
+      ],
+      about: [
+        ...(restProps.appVersion
+          ? [
+              {
+                id: "version",
+                type: "info" as const,
+                title: "バージョン",
+                value: `${restProps.appVersion}${
+                  restProps.appBuild ? ` (${restProps.appBuild})` : ""
+                }`,
+                icon: Info,
+              },
+            ]
+          : []),
+        {
+          id: "privacy",
+          type: "link",
+          title: "プライバシーポリシー",
+          icon: Shield,
+          onPress: restProps.onOpenPrivacyPolicy,
+        },
+        {
+          id: "licenses",
+          type: "link",
+          title: "ライセンス情報",
+          icon: ExternalLink,
+          onPress: restProps.onOpenLicenses,
+        },
+        {
+          id: "support",
+          type: "link",
+          title: "サポートに連絡",
+          icon: ExternalLink,
+          onPress: restProps.onContactSupport,
+        },
+      ],
+    };
 
     // 設定項目のレンダリング
     const renderSettingItem = React.useCallback(
@@ -442,7 +370,11 @@ export const SettingsPanel = React.forwardRef<any, SettingsPanelProps>(
                   checked={item.value}
                   onCheckedChange={item.onChange}
                   disabled={item.disabled}
-                />
+                  accessibilityRole="switch"
+                  accessibilityLabel={item.title}
+                >
+                  <Switch.Thumb />
+                </Switch>
               )}
 
               {item.type === "input" && (
