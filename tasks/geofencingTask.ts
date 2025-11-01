@@ -15,6 +15,7 @@ import {
 import { getUserId } from "../state/userProfile";
 import {
   sendBleConnectedNotification,
+  sendDebugNotification,
   sendGeofenceEnterNotification,
   sendGeofenceExitNotification,
 } from "../utils/notifications";
@@ -22,6 +23,7 @@ import { postInsideAreaStatus } from "./insideAreaStatus";
 import { initPeriodicTask } from "./periodicCheckTask";
 
 const GEOFENCING_TASK_NAME = "background-geofencing-task";
+let backgroundFetchStarted = false;
 
 // API通信を行う関数
 const postAttendance = async (
@@ -144,7 +146,25 @@ TaskManager.defineTask(GEOFENCING_TASK_NAME, async ({ data, error }) => {
       }
     }
 
-    initPeriodicTask().then(() => BackgroundFetch.start()); // 定期タスクを初期化して開始
+    // 定期タスクを初期化して開始（多重開始をガード）
+    if (!backgroundFetchStarted) {
+      await sendDebugNotification(
+        "Geofence Enter",
+        "Entered area; initializing BackgroundFetch"
+      );
+      await initPeriodicTask();
+      try {
+        await BackgroundFetch.start();
+        backgroundFetchStarted = true;
+        console.log("[Geofencing Task] BackgroundFetch started");
+      } catch (e) {
+        console.error("[Geofencing Task] BackgroundFetch start failed", e);
+      }
+    } else {
+      console.log(
+        "[Geofencing Task] BackgroundFetch already started. Skipping start."
+      );
+    }
     tryConnectBleDevice(); // エリア進入時に一度BLE接続を試みる
   } else if (eventType === LocationGeofencingEventType.Exit) {
     console.log(
@@ -163,6 +183,12 @@ TaskManager.defineTask(GEOFENCING_TASK_NAME, async ({ data, error }) => {
       console.error("[Geofencing Task] Exit attendance failed:", exitError);
     }
 
-    BackgroundFetch.stop(); // 定期タスクを停止
+    try {
+      await BackgroundFetch.stop(); // 定期タスクを停止
+      backgroundFetchStarted = false;
+      console.log("[Geofencing Task] BackgroundFetch stopped");
+    } catch (e) {
+      console.error("[Geofencing Task] BackgroundFetch stop failed", e);
+    }
   }
 });

@@ -53,6 +53,22 @@
 - `device.onDisconnected` の購読は自動で解除しつつ状態更新を行い、リスナー漏れや在室状態の不整合を避ける。
 - Bluetooth / 位置情報の拒否を適切に扱い、バックグラウンドタスクがクラッシュしないようエラーハンドリングする。
 
+## iOS 実機検証メモ（背景タスク）
+
+- 前提設定
+	- 端末設定 > 位置情報: 常に許可
+	- Bluetooth: ON、アプリのBluetooth権限許可
+	- 通知: 許可
+- ビルド前提
+	- Dev Client または TestFlight/AdHoc ビルド（Expo Go 非対応）
+	- Info.plist に `UIBackgroundModes = [bluetooth-central, location, fetch, processing]`
+- 検証手順
+	1. 学外（ジオフェンス外）から学内へ移動
+	2. 入場イベント受領時に通知が届く（デバッグ通知を含む場合あり）
+	3. 入場後、自動スキャンで BLE 接続→在室 (PRESENT) 遷移→接続通知
+	4. 接続が切れた場合は定期チェック（~15分）で再スキャンし、在室維持
+	5. 学内→学外で退出通知と BackgroundFetch 停止
+
 ## 外部依存関係
 
 - 九工大出席管理 REST エンドポイント: `https://www.kyutech-4lab.jp/api/attendance/enter`, `https://www.kyutech-4lab.jp/api/attendance/exit`

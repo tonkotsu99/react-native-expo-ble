@@ -14,7 +14,12 @@
     "ios": {
       "supportsTablet": true,
       "infoPlist": {
-        "UIBackgroundModes": ["location", "location"],
+        "UIBackgroundModes": [
+          "bluetooth-central",
+          "location",
+          "fetch",
+          "processing"
+        ],
         "ITSAppUsesNonExemptEncryption": false,
         "NSBluetoothAlwaysUsageDescription": "研究室の在室管理システムでBluetoothビーコンを検知するために必要です。",
         "NSBluetoothPeripheralUsageDescription": "研究室の在室管理システムでBluetoothビーコンを検知するために必要です。"

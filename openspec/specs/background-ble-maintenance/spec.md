@@ -6,6 +6,38 @@ TBD - created by archiving change add-periodic-ble-rescan. Update Purpose after 
 
 ## Requirements
 
+### Requirement: iOS Background Fetch Capability
+
+iOS でバックグラウンド再接続を行うため、アプリは適切なバックグラウンドモードを宣言し、スケジューラを初期化しなければならない (SHALL)。
+
+#### Scenario: Declare fetch/processing modes
+
+- **WHEN** iOS ビルドを作成する
+- **THEN** Info.plist の `UIBackgroundModes` に `fetch` と `processing` を含めなければならない (SHALL)
+- **AND** BackgroundFetch の初期化は `minimumFetchInterval = 15` 分、`stopOnTerminate=false`, `startOnBoot=true` で行われる
+
+#### Scenario: Start BackgroundFetch on geofence enter
+
+- **GIVEN** ジオフェンス入場で状態が `INSIDE_AREA` に遷移した
+- **WHEN** タスク初期化が完了する
+- **THEN** `BackgroundFetch.start()` を一度だけ呼び出し、以降の周期実行で BLE 再接続を試みなければならない (SHALL)
+
+### Requirement: BLE Manager State Restoration (iOS)
+
+iOS のバックグラウンド制約下で BLE を継続利用するため、BleManager は State Restoration を構成しなければならない (SHALL)。
+
+#### Scenario: Provide restore identifiers
+
+- **WHEN** BleManager を初期化する
+- **THEN** `restoreStateIdentifier` と `restoreStateFunction` を指定しなければならない (SHALL)
+- **AND** 復元時にログを記録し、必要に応じて接続状態の再検査を行う
+
+#### Scenario: Declare bluetooth-central mode
+
+- **WHEN** iOS ビルドを作成する
+- **THEN** Info.plist の `UIBackgroundModes` に `bluetooth-central` を含めなければならない (SHALL)
+- **AND** スキャンはサービス UUID でフィルタリングし、不要な消費電力を避ける
+
 ### Requirement: Periodic BLE Reconnect
 
 背景タスクはジオフェンス内にいるが BLE が未接続の場合、定期的に BLE デバイスへの再接続を試みなければならない (SHALL)。接続/切断時にはローカル通知を送信しなければならない (SHALL)。
@@ -50,6 +82,7 @@ TBD - created by archiving change add-periodic-ble-rescan. Update Purpose after 
 - **GIVEN** バックグラウンドタスクが iOS で BLE スキャンを実行する
 - **WHEN** 権限チェックが実行される
 - **THEN** iOS 固有の Bluetooth 権限状態を確認しなければならない (SHALL)
+- **AND** Info.plist に `NSBluetoothAlwaysUsageDescription` が定義され、`UIBackgroundModes` に `bluetooth-central` と `location` が含まれていることを前提とする
 - **AND** 権限不足の場合はスキャンをスキップし、警告ログを記録しなければならない (SHALL)
 
 #### Scenario: Handle iOS Bluetooth state changes
