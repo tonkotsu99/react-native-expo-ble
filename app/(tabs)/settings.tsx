@@ -1,5 +1,5 @@
-import AttendancePage from "@/components/pages/AttendancePage";
+import SettingsPage from "@/components/pages/SettingsPage";
 
 export default function SettingsScreen() {
-  return <AttendancePage initialActiveTab="settings" />;
+  return <SettingsPage />;
 }

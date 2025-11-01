@@ -24,7 +24,7 @@
 ### アーキテクチャパターン
 
 - エントリーポイントは `expo-router/entry`。`app/_layout.tsx` で `TamaguiProvider` によるラップと `StatusBar` マウント、`useGeofencing()` の初期化を 1 回だけ行う。
-- 既定のルート `app/index.tsx` は `components/pages/AttendancePage.tsx` を再エクスポート。ナビゲーション変更がない限りスタックを増やさず、このページを拡張する。
+- 既定のルート `app/index.tsx` は `(tabs)` にリダイレクトし、各タブは専用のページ（`DashboardPage`/`ConnectionPage`/`SettingsPage`）をレンダリングする。
 - BLE 制御は `hooks/useBLE.ts` に集約し、共有の `bleManager` シングルトンを利用してパーミッション確認・接続・出席 API 送信を行う。
 - ジオフェンス系のバックグラウンド処理は `hooks/useGeofencing.ts` で登録され、`tasks/geofencingTask.ts` と `tasks/periodicCheckTask.ts` に実装を分担する。
 - 永続化されたアプリ状態（`OUTSIDE`, `INSIDE_AREA`, `PRESENT`, `UNCONFIRMED`）は `state/appState.ts` で管理し、バックグラウンドタスクの挙動判断に利用する。
@@ -56,18 +56,18 @@
 ## iOS 実機検証メモ（背景タスク）
 
 - 前提設定
-	- 端末設定 > 位置情報: 常に許可
-	- Bluetooth: ON、アプリのBluetooth権限許可
-	- 通知: 許可
+  - 端末設定 > 位置情報: 常に許可
+  - Bluetooth: ON、アプリの Bluetooth 権限許可
+  - 通知: 許可
 - ビルド前提
-	- Dev Client または TestFlight/AdHoc ビルド（Expo Go 非対応）
-	- Info.plist に `UIBackgroundModes = [bluetooth-central, location, fetch, processing]`
+  - Dev Client または TestFlight/AdHoc ビルド（Expo Go 非対応）
+  - Info.plist に `UIBackgroundModes = [bluetooth-central, location, fetch, processing]`
 - 検証手順
-	1. 学外（ジオフェンス外）から学内へ移動
-	2. 入場イベント受領時に通知が届く（デバッグ通知を含む場合あり）
-	3. 入場後、自動スキャンで BLE 接続→在室 (PRESENT) 遷移→接続通知
-	4. 接続が切れた場合は定期チェック（~15分）で再スキャンし、在室維持
-	5. 学内→学外で退出通知と BackgroundFetch 停止
+  1.  学外（ジオフェンス外）から学内へ移動
+  2.  入場イベント受領時に通知が届く（デバッグ通知を含む場合あり）
+  3.  入場後、自動スキャンで BLE 接続 → 在室 (PRESENT) 遷移 → 接続通知
+  4.  接続が切れた場合は定期チェック（~15 分）で再スキャンし、在室維持
+  5.  学内 → 学外で退出通知と BackgroundFetch 停止
 
 ## 外部依存関係
 

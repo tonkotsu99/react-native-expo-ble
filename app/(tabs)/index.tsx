@@ -1,5 +1,5 @@
-import AttendancePage from "@/components/pages/AttendancePage";
+import DashboardPage from "@/components/pages/DashboardPage";
 
 export default function DashboardScreen() {
-  return <AttendancePage initialActiveTab="dashboard" />;
+  return <DashboardPage />;
 }

@@ -46,5 +46,29 @@ To learn more about developing your project with Expo, look at the following res
 
 Join our community of developers creating universal apps.
 
+## Project structure (app-specific)
+
+- Routing: Expo Router with a tab layout under `app/(tabs)`.
+- Pages:
+  - `components/pages/DashboardPage.tsx`
+  - `components/pages/ConnectionPage.tsx`
+  - `components/pages/SettingsPage.tsx`
+- Templates:
+  - `components/templates/EnhancedMainTemplate.tsx` (base responsive layout)
+  - Tab-focused wrappers:
+    - `components/templates/DashboardTemplate.tsx`
+    - `components/templates/ConnectionTemplate.tsx`
+    - `components/templates/SettingsTemplate.tsx`
+- Atomic design layers: atoms, molecules, organisms, templates, pages.
+
 - [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
 - [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+
+## Project structure notes
+
+- Routing uses Expo Router tabs under `app/(tabs)/` with three screens: `index.tsx` (Dashboard), `connection.tsx`, and `settings.tsx`.
+- Each tab renders a dedicated page component under `components/pages/`:
+  - `DashboardPage.tsx`
+  - `ConnectionPage.tsx`
+  - `SettingsPage.tsx`
+- Pages compose organisms (`StatusDashboard`, `ConnectionPanel`, `SettingsPanel`) via `EnhancedMainTemplate` to follow Atomic Design.

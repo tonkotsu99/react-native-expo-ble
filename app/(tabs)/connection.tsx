@@ -1,5 +1,5 @@
-import AttendancePage from "@/components/pages/AttendancePage";
+import ConnectionPage from "@/components/pages/ConnectionPage";
 
 export default function ConnectionScreen() {
-  return <AttendancePage initialActiveTab="connection" />;
+  return <ConnectionPage />;
 }
