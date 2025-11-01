@@ -18,17 +18,11 @@ import React, { useCallback, useEffect, useState } from "react";
 import { useColorScheme } from "react-native";
 
 type Props = {
-  // Router からタブを制御したい場合のオプション
-  controlledActiveTab?: NavigationTab;
-  onTabChange?: (tab: NavigationTab) => void;
-  hideBottomNavigation?: boolean;
+  // 初期表示するタブ（Router 非依存）
+  initialActiveTab?: NavigationTab;
 };
 
-export default function AttendancePage({
-  controlledActiveTab,
-  onTabChange,
-  hideBottomNavigation,
-}: Props) {
+export default function AttendancePage({ initialActiveTab }: Props) {
   // カスタムhookの使用
   const { requestPermissions, startScan, disconnectDevice, connectedDevice } =
     useBLE();
@@ -46,19 +40,8 @@ export default function AttendancePage({
   // ローカル状態
   const [isScanning, setIsScanning] = useState(false);
   const [appState, setAppStateLocal] = useState<AppState>("OUTSIDE");
-  const [internalActiveTab, setInternalActiveTab] =
-    useState<NavigationTab>("dashboard");
-  const activeTab = controlledActiveTab ?? internalActiveTab;
-  const handleTabChangeControlled = useCallback(
-    (tab: NavigationTab) => {
-      if (onTabChange) {
-        onTabChange(tab);
-      } else {
-        setInternalActiveTab(tab);
-      }
-    },
-    [onTabChange]
-  );
+  const [activeTab] = useState<NavigationTab>(initialActiveTab ?? "dashboard");
+  // Tabs 管理に移行したため、内部でのタブ切替ハンドラは不要
   const [activityLogs, setActivityLogs] = useState<LogEntryData[]>([]);
   const [bluetoothEnabled] = useState(true);
   const [hasPermissions, setPermissions] = useState(false);
@@ -1218,8 +1201,6 @@ export default function AttendancePage({
     <>
       <EnhancedMainTemplate
         activeTab={activeTab}
-        onTabChange={handleTabChangeControlled}
-        hideBottomNavigation={!!hideBottomNavigation}
         dashboardState={dashboardState}
         connectionStatus={bleConnectionStatus}
         deviceInfo={

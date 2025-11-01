@@ -1,10 +1,10 @@
-import { Activity, Settings, Wifi } from "@tamagui/lucide-icons";
+// アイコンは内部ナビ撤去により未使用
 import React from "react";
 import { SafeAreaView } from "react-native";
 import type { YStackProps } from "tamagui";
 import { ScrollView, styled, useMedia, XStack, YStack } from "tamagui";
-import { IconButton } from "../atoms/IconButton";
-import { M_Text } from "../atoms/M_Text";
+// ルータ移行に伴い内部ナビゲーション UI は撤去
+// 見出しテキストは内部メニュー撤去により未使用
 import { ThemeToggleButton } from "../atoms/ThemeToggleButton";
 import type { BLEConnectionStatus } from "../molecules/ConnectionVisualization";
 import type { LogEntryData } from "../molecules/LogEntry";
@@ -141,30 +141,7 @@ const FloatingActionButton = styled(XStack, {
 });
 
 // ボトムナビゲーション�E�モバイル用�E�E
-const BottomNavigation = styled(XStack, {
-  name: "BottomNavigation",
-  backgroundColor: "$backgroundStrong",
-  borderTopWidth: 1,
-  borderTopColor: "$borderColor",
-  paddingVertical: "$3",
-  paddingHorizontal: "$4",
-  justifyContent: "space-around",
-  alignItems: "center",
-
-  variants: {
-    layout: {
-      mobile: {
-        // モバイルでのみ表示
-      },
-      tablet: {
-        display: "none",
-      },
-      desktop: {
-        display: "none",
-      },
-    },
-  } as const,
-});
+// 内部ボトムナビは撤去
 
 // レイアウトタイチE
 export type LayoutType = "mobile" | "tablet" | "desktop";
@@ -198,7 +175,7 @@ export type EnhancedMainTemplateProps = YStackProps & {
 
   // ナビゲーション
   activeTab?: NavigationTab;
-  onTabChange?: (tab: NavigationTab) => void;
+  // ルータ移行後は内部タブ切替 UI を提供しない
 
   // チE�Eタ
   dashboardState: DashboardState;
@@ -243,8 +220,6 @@ export type EnhancedMainTemplateProps = YStackProps & {
   customContent?: React.ReactNode;
   headerContent?: React.ReactNode;
   footerContent?: React.ReactNode;
-  // Router 管理タブ時に内部のボトムナビを抑止する
-  hideBottomNavigation?: boolean;
 
   accessibilityLabel?: string;
 };
@@ -257,7 +232,7 @@ export const EnhancedMainTemplate = React.forwardRef<
     layout,
     showSidebar = true,
     activeTab = "dashboard",
-    onTabChange,
+
     dashboardState,
     connectionStatus,
     deviceInfo,
@@ -287,7 +262,6 @@ export const EnhancedMainTemplate = React.forwardRef<
     headerContent,
     footerContent,
     accessibilityLabel,
-    hideBottomNavigation = false,
   } = props;
 
   // メチE��アクエリでレスポンシブレイアウトを自動判宁E
@@ -296,12 +270,7 @@ export const EnhancedMainTemplate = React.forwardRef<
     layout || (media.gtMd ? "desktop" : media.gtSm ? "tablet" : "mobile");
 
   // タブ�Eり替え�E琁E
-  const handleTabChange = React.useCallback(
-    (tab: NavigationTab) => {
-      onTabChange?.(tab);
-    },
-    [onTabChange]
-  );
+  // 内部ナビゲーションは提供しない（Tabs に委譲）
 
   // アクセシビリチE��プロパティ
   const accessibilityProps = {
@@ -397,49 +366,7 @@ export const EnhancedMainTemplate = React.forwardRef<
         {showSidebar && detectedLayout !== "mobile" && (
           <Sidebar layout={detectedLayout}>
             <YStack space="$3">
-              {/* ナビゲーションメニュー */}
-              <YStack space="$2">
-                <M_Text
-                  fontSize="$3"
-                  fontWeight="600"
-                  color="$color11"
-                  paddingHorizontal="$3"
-                >
-                  メニュー
-                </M_Text>
-
-                <IconButton
-                  variant={activeTab === "dashboard" ? "solid" : "ghost"}
-                  size="medium"
-                  icon={Activity}
-                  onPress={() => handleTabChange("dashboard")}
-                  justifyContent="flex-start"
-                >
-                  ダチE��ュボ�EチE
-                </IconButton>
-
-                <IconButton
-                  variant={activeTab === "connection" ? "solid" : "ghost"}
-                  size="medium"
-                  icon={Wifi}
-                  onPress={() => handleTabChange("connection")}
-                  justifyContent="flex-start"
-                >
-                  BLE接綁E
-                </IconButton>
-
-                {/* logs タブは廃止 */}
-
-                <IconButton
-                  variant={activeTab === "settings" ? "solid" : "ghost"}
-                  size="medium"
-                  icon={Settings}
-                  onPress={() => handleTabChange("settings")}
-                  justifyContent="flex-start"
-                >
-                  設宁E
-                </IconButton>
-              </YStack>
+              {/* メニューは Tabs に委譲するため削除 */}
 
               {/* サイドバーのダチE��ュボ�Eド情報�E�デスクトップ�Eみ�E�E*/}
               {detectedLayout === "desktop" && activeTab !== "dashboard" && (
@@ -466,36 +393,7 @@ export const EnhancedMainTemplate = React.forwardRef<
         </MainContent>
       </ResponsiveContainer>
 
-      {/* ボトムナビゲーション�E�モバイルのみ�E�E*/}
-      {detectedLayout === "mobile" && !hideBottomNavigation && (
-        <BottomNavigation layout={detectedLayout}>
-          <IconButton
-            variant={activeTab === "dashboard" ? "solid" : "ghost"}
-            size="$3"
-            icon={Activity}
-            onPress={() => handleTabChange("dashboard")}
-            iconOnly
-          />
-
-          <IconButton
-            variant={activeTab === "connection" ? "solid" : "ghost"}
-            size="$3"
-            icon={Wifi}
-            onPress={() => handleTabChange("connection")}
-            iconOnly
-          />
-
-          {/* logs タブは廃止 */}
-
-          <IconButton
-            variant={activeTab === "settings" ? "solid" : "ghost"}
-            size="$3"
-            icon={Settings}
-            onPress={() => handleTabChange("settings")}
-            iconOnly
-          />
-        </BottomNavigation>
-      )}
+      {/* 内部ボトムナビは Tabs に委譲するため削除 */}
 
       {/* フローチE��ングアクションボタン�E�モバイルのみ�E�E*/}
       {detectedLayout === "mobile" && activeTab === "dashboard" && (
