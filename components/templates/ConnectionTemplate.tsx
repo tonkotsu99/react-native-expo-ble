@@ -5,7 +5,7 @@ import type {
 import { ConnectionPanel } from "@/components/organisms/ConnectionPanel";
 import type { DashboardState } from "@/components/organisms/StatusDashboard";
 import React from "react";
-import { SafeAreaView } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { ScrollView, styled, YStack } from "tamagui";
 
 export type ConnectionTemplateProps = {

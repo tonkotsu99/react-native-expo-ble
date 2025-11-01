@@ -12,7 +12,7 @@ const StyledIconButton = styled(Button, {
   gap: "$2",
 
   variants: {
-    size: {
+    uiSize: {
       small: {
         padding: "$2",
         minHeight: 32,
@@ -126,7 +126,7 @@ const StyledIconButton = styled(Button, {
   } as const,
 
   defaultVariants: {
-    size: "medium",
+    uiSize: "medium",
     variant: "solid",
   },
 });
@@ -136,7 +136,14 @@ type IconComponent = React.ComponentType<{
   color?: string;
 }>;
 
-type IconButtonProps = ComponentProps<typeof StyledIconButton> & {
+type BaseStyledProps = Omit<
+  ComponentProps<typeof StyledIconButton>,
+  "size" | "uiSize"
+>;
+
+type IconButtonProps = BaseStyledProps & {
+  // Public prop for sizing without passing Tamagui's size prop down to Button
+  size?: "small" | "medium" | "large";
   icon?: IconComponent;
   iconAfter?: IconComponent;
   iconSize?: number | string;
@@ -158,6 +165,7 @@ export const IconButton = forwardRef<any, IconButtonProps>(
       disabled,
       children,
       onPress,
+      size = "medium",
       ...props
     },
     ref
@@ -177,6 +185,8 @@ export const IconButton = forwardRef<any, IconButtonProps>(
         ref={ref}
         disabled={isDisabled}
         iconOnly={iconOnly}
+        // map external size => internal uiSize to avoid Button size collisions
+        uiSize={size}
         {...accessibilityProps}
         {...props}
         onPress={onPress}

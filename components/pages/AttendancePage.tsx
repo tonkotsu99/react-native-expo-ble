@@ -234,17 +234,26 @@ export default function AttendancePage({ initialActiveTab }: Props) {
   };
 
   // 設定値の構築
-  const settings: SettingsValues = {
+  const [settings, setSettings] = useState<SettingsValues>({
     theme: colorScheme === "dark" ? "dark" : "light",
     notifications: true,
     vibrationFeedback: true,
     autoReconnect: true,
     keepScreenOn: false,
-    logLevel: "info" as const,
+    logLevel: "info",
     autoExportLogs: false,
     dataRetentionDays: 30,
     userId,
-  };
+  });
+
+  // 外部の userId / theme 変化に追従
+  useEffect(() => {
+    setSettings((prev) => ({
+      ...prev,
+      theme: colorScheme === "dark" ? "dark" : "light",
+      userId,
+    }));
+  }, [colorScheme, userId]);
 
   // アクションハンドラー
   const handleScan = useCallback(async (): Promise<void> => {
@@ -1105,8 +1114,7 @@ export default function AttendancePage({ initialActiveTab }: Props) {
 
   const handleSettingChange = useCallback(
     (key: keyof SettingsValues, value: any): void => {
-      console.log(`設定変更: ${key} = ${value}`);
-      // 設定変更ロジックを実装
+      setSettings((prev) => ({ ...prev, [key]: value }));
     },
     []
   );

@@ -27,3 +27,6 @@ export const API_URL_INSIDE_AREA =
   "https://www.kyutech-4lab.jp/api/attendance/inside-area";
 
 // ---------------------------------
+
+// Debug flags
+export const DEBUG_BLE = false; // set to false to silence debug notifications

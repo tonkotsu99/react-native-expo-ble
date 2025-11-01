@@ -2,13 +2,16 @@ import type { BLEConnectionStatus } from "@/components/molecules/ConnectionVisua
 import { ConnectionTemplate } from "@/components/templates/ConnectionTemplate";
 import { useBLE } from "@/hooks/useBLE";
 import { useRequireUserId } from "@/hooks/useRequireUserId";
+import { useUserProfile } from "@/hooks/useUserProfile";
 import React, { useCallback, useMemo, useState } from "react";
 
 export default function ConnectionPage() {
   const { requestPermissions, startScan, disconnectDevice, connectedDevice } =
     useBLE();
 
-  const requireUserId = useRequireUserId({ userId: null, loading: false });
+  // Use persisted userId so connection actions don't get blocked incorrectly
+  const { userId, loading } = useUserProfile();
+  const requireUserId = useRequireUserId({ userId, loading });
 
   const [isScanning, setIsScanning] = useState(false);
   const [hasPermissions, setHasPermissions] = useState(false);

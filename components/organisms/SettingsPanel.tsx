@@ -1,5 +1,4 @@
 import {
-  Bell,
   ChevronRight,
   ExternalLink,
   Info,
@@ -215,33 +214,12 @@ export const SettingsPanel = React.forwardRef<any, SettingsPanelProps>(
         {
           id: "userId",
           type: "info",
-          title: "ユーザーID",
+          title: "userId",
           description: settings.userId
-            ? `現在設定中: ${settings.userId}`
+            ? ``
             : "未設定 - BLE操作には設定が必要です",
           icon: User,
           value: settings.userId || "未設定",
-        },
-        {
-          id: "userIdInput",
-          type: "input",
-          title: "ユーザーID入力",
-          placeholder: "ユーザーIDを入力",
-          value: draftUserId,
-          onChange: (val: string) => setDraftUserId(val),
-          disabled: restProps.userIdLoading || restProps.userIdSaving,
-          keyboardType: "default",
-        },
-        {
-          id: "userIdSaveInline",
-          type: "action",
-          title: "ユーザーIDを保存",
-          description: "この値で保存",
-          onPress: () => restProps.onUserIdSave?.(draftUserId),
-          disabled:
-            !!restProps.userIdLoading ||
-            !!restProps.userIdSaving ||
-            !draftUserId.trim(),
         },
         {
           id: "userIdEdit",
@@ -250,39 +228,6 @@ export const SettingsPanel = React.forwardRef<any, SettingsPanelProps>(
           description: "モーダルで詳細に編集",
           disabled: restProps.userIdLoading || restProps.userIdSaving,
           onPress: restProps.onUserIdModalOpen,
-        },
-      ],
-      notifications: [
-        {
-          id: "notifications",
-          type: "toggle",
-          title: "プッシュ通知",
-          description: "接続状態の変更通知を受け取る",
-          icon: Bell,
-          value: settings.notifications,
-          onChange: (value) =>
-            restProps.onSettingChange?.("notifications", value),
-        },
-        {
-          id: "vibrationFeedback",
-          type: "toggle",
-          title: "バイブレーション",
-          description: "アクション実行時の振動フィードバック",
-          value: settings.vibrationFeedback,
-          onChange: (value) =>
-            restProps.onSettingChange?.("vibrationFeedback", value),
-        },
-      ],
-
-      behavior: [
-        {
-          id: "autoReconnect",
-          type: "toggle",
-          title: "自動再接続",
-          description: "BLE接続が切断された際の自動再接続",
-          value: settings.autoReconnect,
-          onChange: (value) =>
-            restProps.onSettingChange?.("autoReconnect", value),
         },
       ],
       about: [
@@ -450,57 +395,16 @@ export const SettingsPanel = React.forwardRef<any, SettingsPanelProps>(
             <H4 fontSize="$4" fontWeight="600" color="$color" marginBottom="$2">
               ユーザー設定
             </H4>
-            {defaultSections.userId.map(renderSettingItem)}
+            {(defaultSections.userId || []).map(renderSettingItem)}
           </SettingsSection>
         )}
-
-        {/* 外観設定 */}
-        {sections.appearance && (
-          <SettingsSection>
-            <H4 fontSize="$4" fontWeight="600" color="$color" marginBottom="$2">
-              外観
-            </H4>
-            {defaultSections.appearance.map(renderSettingItem)}
-          </SettingsSection>
-        )}
-
-        {/* 通知設定 */}
-        {sections.notifications && (
-          <SettingsSection>
-            <H4 fontSize="$4" fontWeight="600" color="$color" marginBottom="$2">
-              通知
-            </H4>
-            {defaultSections.notifications.map(renderSettingItem)}
-          </SettingsSection>
-        )}
-
-        {/* 動作設定 */}
-        {sections.behavior && (
-          <SettingsSection>
-            <H4 fontSize="$4" fontWeight="600" color="$color" marginBottom="$2">
-              動作
-            </H4>
-            {defaultSections.behavior.map(renderSettingItem)}
-          </SettingsSection>
-        )}
-
-        {/* データ設定 */}
-        {sections.data && (
-          <SettingsSection>
-            <H4 fontSize="$4" fontWeight="600" color="$color" marginBottom="$2">
-              データ管理
-            </H4>
-            {defaultSections.data.map(renderSettingItem)}
-          </SettingsSection>
-        )}
-
         {/* カスタム設定項目 */}
-        {customItems.length > 0 && (
+        {Array.isArray(customItems) && customItems.length > 0 && (
           <SettingsSection>
             <H4 fontSize="$4" fontWeight="600" color="$color" marginBottom="$2">
               その他
             </H4>
-            {customItems.map(renderSettingItem)}
+            {(customItems || []).map(renderSettingItem)}
           </SettingsSection>
         )}
 
@@ -510,7 +414,7 @@ export const SettingsPanel = React.forwardRef<any, SettingsPanelProps>(
             <H4 fontSize="$4" fontWeight="600" color="$color" marginBottom="$2">
               アプリ情報
             </H4>
-            {defaultSections.about.map(renderSettingItem)}
+            {(defaultSections.about || []).map(renderSettingItem)}
           </SettingsSection>
         )}
       </StyledSettingsPanel>

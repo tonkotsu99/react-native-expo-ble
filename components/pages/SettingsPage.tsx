@@ -161,26 +161,32 @@ export default function SettingsPage() {
     ]
   );
 
-  const settings: SettingsValues = useMemo(
-    () => ({
+  const [settings, setSettings] = useState<SettingsValues>({
+    theme: colorScheme === "dark" ? "dark" : "light",
+    notifications: true,
+    vibrationFeedback: true,
+    autoReconnect: true,
+    keepScreenOn: false,
+    logLevel: "info",
+    autoExportLogs: false,
+    dataRetentionDays: 30,
+    userId,
+  });
+
+  // 外部要因で userId / theme が更新された場合に同期
+  useEffect(() => {
+    setSettings((prev) => ({
+      ...prev,
       theme: colorScheme === "dark" ? "dark" : "light",
-      notifications: true,
-      vibrationFeedback: true,
-      autoReconnect: true,
-      keepScreenOn: false,
-      logLevel: "info",
-      autoExportLogs: false,
-      dataRetentionDays: 30,
       userId,
-    }),
-    [colorScheme, userId]
-  );
+    }));
+  }, [colorScheme, userId]);
 
   // テーマ変更UIは撤去
 
   const handleSettingChange = useCallback(
     (key: keyof SettingsValues, value: any) => {
-      console.log("設定変更", key, value);
+      setSettings((prev) => ({ ...prev, [key]: value }));
     },
     []
   );

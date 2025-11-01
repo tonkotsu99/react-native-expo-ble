@@ -2,6 +2,7 @@ import type { BLEConnectionStatus } from "@/components/molecules/ConnectionVisua
 import { DashboardTemplate } from "@/components/templates/DashboardTemplate";
 import { useBLE } from "@/hooks/useBLE";
 import { useRequireUserId } from "@/hooks/useRequireUserId";
+import { useUserProfile } from "@/hooks/useUserProfile";
 import { getAppState, type AppState } from "@/state/appState";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 
@@ -10,8 +11,9 @@ export default function DashboardPage() {
   const { requestPermissions, startScan, disconnectDevice, connectedDevice } =
     useBLE();
 
-  // We only need to ensure a userId exists before connection actions
-  const requireUserId = useRequireUserId({ userId: null, loading: false });
+  // Ensure we reference the real persisted userId
+  const { userId, loading } = useUserProfile();
+  const requireUserId = useRequireUserId({ userId, loading });
 
   // Local state
   const [isScanning, setIsScanning] = useState(false);

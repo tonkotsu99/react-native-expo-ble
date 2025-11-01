@@ -7,6 +7,7 @@ import {
 import { Slot } from "expo-router";
 import { useEffect } from "react";
 import { StatusBar } from "react-native";
+import { SafeAreaProvider } from "react-native-safe-area-context";
 import { PortalProvider, TamaguiProvider } from "tamagui";
 
 export default function RootLayout() {
@@ -20,10 +21,12 @@ export default function RootLayout() {
 
   return (
     <TamaguiProvider config={tamaguiConfig}>
-      <PortalProvider>
-        <StatusBar />
-        <Slot />
-      </PortalProvider>
+      <SafeAreaProvider>
+        <PortalProvider>
+          <StatusBar />
+          <Slot />
+        </PortalProvider>
+      </SafeAreaProvider>
     </TamaguiProvider>
   );
 }

@@ -1,6 +1,6 @@
 // アイコンは内部ナビ撤去により未使用
 import React from "react";
-import { SafeAreaView } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import type { YStackProps } from "tamagui";
 import { ScrollView, styled, useMedia, YStack } from "tamagui";
 // ルータ移行に伴い内部ナビゲーション UI は撤去

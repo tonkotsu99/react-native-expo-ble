@@ -4,6 +4,7 @@ import {
   API_URL_EXIT,
   BLE_DEVICE_NAME_PREFIXES,
   BLE_SERVICE_UUIDS,
+  DEBUG_BLE,
 } from "@/constants";
 import { setAppState } from "@/state/appState";
 import { getUserId } from "@/state/userProfile";
@@ -12,6 +13,7 @@ import {
   sendBleDisconnectedNotification,
   sendBlePermissionErrorNotification,
   sendBluetoothDisabledNotification,
+  sendDebugNotification,
   sendStateUnconfirmedNotification,
 } from "@/utils/notifications";
 import * as DeviceInfo from "expo-device";
@@ -55,11 +57,22 @@ const postAttendance = async (url: string, device: Device): Promise<void> => {
 
 export const useBLE = (): UseBLE => {
   const [connectedDevice, setConnectedDevice] = useState<Device | null>(null);
+  const debug = async (title: string, body: string) => {
+    console.log(`[BLE][DEBUG] ${title}: ${body}`);
+    if (DEBUG_BLE) {
+      try {
+        await sendDebugNotification(title, body);
+      } catch {}
+    }
+  };
   const requestPermissions = async (): Promise<boolean> => {
     if (Platform.OS === "ios") {
       try {
         const state = await bleManager.state();
         console.log(`iOS Bluetooth状態: ${state}`);
+        if (DEBUG_BLE) {
+          await debug("BLE State (iOS)", String(state));
+        }
 
         switch (state) {
           case State.PoweredOn:
@@ -67,25 +80,30 @@ export const useBLE = (): UseBLE => {
           case State.PoweredOff:
             console.warn("Bluetoothが無効です。設定から有効にしてください。");
             await sendBluetoothDisabledNotification();
+            if (DEBUG_BLE) await debug("BLE Disabled", "PoweredOff");
             return false;
           case State.Unauthorized:
             console.warn(
               "Bluetooth権限が拒否されています。設定から許可してください。"
             );
             await sendBlePermissionErrorNotification();
+            if (DEBUG_BLE) await debug("BLE Unauthorized", "No permission");
             return false;
           case State.Unsupported:
             console.error("このデバイスはBluetoothをサポートしていません。");
             await sendBlePermissionErrorNotification();
+            if (DEBUG_BLE) await debug("BLE Unsupported", "Not supported");
             return false;
           default:
             console.warn(`Bluetooth状態が不明です: ${state}`);
             await sendBlePermissionErrorNotification();
+            if (DEBUG_BLE) await debug("BLE Unknown", String(state));
             return false;
         }
       } catch (error) {
         console.error("iOS Bluetooth状態取得エラー:", error);
         await sendBlePermissionErrorNotification();
+        if (DEBUG_BLE) await debug("BLE State Error", String(error));
         return false;
       }
     }
@@ -127,6 +145,12 @@ export const useBLE = (): UseBLE => {
 
   const connectToDevice = async (device: Device): Promise<void> => {
     try {
+      if (DEBUG_BLE) {
+        await debug(
+          "Connecting",
+          `id=${device.id}, name=${device.name ?? "(none)"}`
+        );
+      }
       const subscription = device.onDisconnected(
         async (error, disconectedDevice) => {
           if (disconectedDevice) {
@@ -134,6 +158,15 @@ export const useBLE = (): UseBLE => {
             postAttendance(API_URL_EXIT, disconectedDevice);
             // BLE切断通知を送信
             await sendBleDisconnectedNotification(disconectedDevice.name);
+            if (DEBUG_BLE)
+              await debug(
+                "Disconnected",
+                `id=${disconectedDevice.id}, name=${
+                  disconectedDevice.name ?? "(none)"
+                }, error=${
+                  error ? String((error as any)?.message ?? error) : "none"
+                }`
+              );
           }
 
           // すぐにAPIを叩くのではなく、状態を「未確認」に変更する
@@ -148,7 +181,9 @@ export const useBLE = (): UseBLE => {
 
       console.log(`接続中: ${device.name}`);
       const connected = await device.connect();
+      if (DEBUG_BLE) await debug("Connected", `id=${connected.id}`);
       await connected.discoverAllServicesAndCharacteristics();
+      if (DEBUG_BLE) await debug("Discovered Services", `id=${connected.id}`);
       setConnectedDevice(connected);
       await setAppState("PRESENT");
       await postAttendance(API_URL_ENTER, connected);
@@ -157,6 +192,13 @@ export const useBLE = (): UseBLE => {
       console.log(`接続成功: ${connected.name}`);
     } catch (error) {
       console.error(`接続失敗: ${device.name}`, error);
+      if (DEBUG_BLE)
+        await debug(
+          "Connect Failed",
+          `id=${device.id}, name=${device.name ?? "(none)"}, error=${String(
+            (error as any)?.message ?? error
+          )}`
+        );
       throw error;
     }
   };
@@ -170,47 +212,97 @@ export const useBLE = (): UseBLE => {
     );
 
     return new Promise((resolve, reject) => {
-      bleManager.startDeviceScan(BLE_SERVICE_UUIDS, null, (error, device) => {
-        if (error) {
-          console.error("Scan Error:", error);
+      let finished = false;
+
+      // Safety timeout to avoid indefinite scanning
+      const timeoutMs = 15000;
+      const timeoutId = setTimeout(() => {
+        if (finished) return;
+        finished = true;
+        try {
           bleManager.stopDeviceScan();
+        } catch {}
+        const err = new Error("BLE scan timed out");
+        console.warn("[BLE] Scan timeout");
+        if (DEBUG_BLE)
+          debug(
+            "Scan Timeout",
+            `scanned=${scannedCount}, matched=${matchedCount}`
+          );
+        reject(err);
+      }, timeoutMs);
+
+      let scannedCount = 0;
+      let matchedCount = 0;
+
+      if (DEBUG_BLE) debug("Scan Started", `timeout=${timeoutMs}ms`);
+
+      // Important: pass null to discover broadly, then filter in JS
+      // Some devices don't advertise target services in the scan response on iOS
+      bleManager.startDeviceScan(null, null, (error, device) => {
+        if (finished) return;
+
+        if (error) {
+          console.error("[BLE] Scan Error:", error);
+          finished = true;
+          clearTimeout(timeoutId);
+          try {
+            bleManager.stopDeviceScan();
+          } catch {}
+          if (DEBUG_BLE)
+            debug("Scan Error", String((error as any)?.message ?? error));
           reject(error);
           return;
         }
 
-        if (device) {
-          const serviceUUIDs = device.serviceUUIDs?.map((uuid) =>
-            uuid.toLowerCase()
-          );
-          const deviceName = device.name?.toLowerCase() ?? "";
-          const matchesService = serviceUUIDs
-            ? serviceUUIDs.some((uuid) => normalizedServiceUUIDs.includes(uuid))
-            : false;
-          const matchesName = normalizedNamePrefixes.some((prefix) =>
-            deviceName.startsWith(prefix)
-          );
+        if (!device) return;
+        scannedCount++;
 
-          if (matchesService || matchesName) {
-            console.log("[BLE] Target device detected:", {
-              id: device.id,
-              name: device.name,
-              rssi: device.rssi,
-              serviceUUIDs: device.serviceUUIDs,
-            });
+        const serviceUUIDs = device.serviceUUIDs?.map((uuid) =>
+          uuid.toLowerCase()
+        );
+        const deviceName = device.name?.toLowerCase() ?? "";
+        const matchesService = serviceUUIDs
+          ? serviceUUIDs.some((uuid) => normalizedServiceUUIDs.includes(uuid))
+          : false;
+        const matchesName = normalizedNamePrefixes.some((prefix) =>
+          deviceName.startsWith(prefix)
+        );
 
+        if (matchesService || matchesName) {
+          matchedCount++;
+          console.log("[BLE] Target device detected:", {
+            id: device.id,
+            name: device.name,
+            rssi: device.rssi,
+            serviceUUIDs: device.serviceUUIDs,
+          });
+
+          finished = true;
+          clearTimeout(timeoutId);
+          try {
             bleManager.stopDeviceScan();
-            connectToDevice(device)
-              .then(() => resolve())
-              .catch(reject);
-          } else {
-            // デバッグ用に検出デバイスをログ出力
-            console.log("[BLE] Ignoring device (does not match target):", {
-              id: device.id,
-              name: device.name,
-              rssi: device.rssi,
-              serviceUUIDs: device.serviceUUIDs,
-            });
-          }
+          } catch {}
+          if (DEBUG_BLE)
+            debug(
+              "Match Found",
+              `name=${
+                device.name ?? "(none)"
+              }, service=${matchesService}, prefix=${matchesName}, rssi=${
+                device.rssi
+              }`
+            );
+          connectToDevice(device)
+            .then(() => resolve())
+            .catch((e) => reject(e));
+        } else if (__DEV__) {
+          // Debug log can be noisy; keep in dev builds only
+          console.log("[BLE] Ignoring device (no match):", {
+            id: device.id,
+            name: device.name,
+            rssi: device.rssi,
+            serviceUUIDs: device.serviceUUIDs,
+          });
         }
       });
     });
