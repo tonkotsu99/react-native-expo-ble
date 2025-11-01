@@ -2,7 +2,6 @@ import React from "react";
 import type { YStackProps } from "tamagui";
 import { H2, styled, XStack, YStack } from "tamagui";
 import { M_Text } from "../atoms/M_Text";
-import { ThemeToggleButton } from "../atoms/ThemeToggleButton";
 import {
   ConnectionVisualization,
   type BLEConnectionStatus,
@@ -107,7 +106,6 @@ export type StatusDashboardProps = YStackProps & {
   // 表示オプション
   showHeader?: boolean;
   showTimestamps?: boolean;
-  showThemeToggle?: boolean;
   title?: string;
   subtitle?: string;
 
@@ -119,7 +117,6 @@ export type StatusDashboardProps = YStackProps & {
   // インタラクション
   onAppStatePress?: (state: AppState) => void;
   onConnectionPress?: () => void;
-  onThemeToggle?: (theme: "light" | "dark") => void;
   onRefresh?: () => void;
 
   // BLE操作
@@ -187,7 +184,6 @@ export const StatusDashboard = React.forwardRef<any, StatusDashboardProps>(
       dashboardState,
       showHeader = true,
       showTimestamps = true,
-      showThemeToggle = true,
       title = "出席管理システム",
       subtitle,
       stackCards = false,
@@ -195,7 +191,6 @@ export const StatusDashboard = React.forwardRef<any, StatusDashboardProps>(
       compactMode = false,
       onAppStatePress,
       onConnectionPress,
-      onThemeToggle,
       onRefresh,
       onReconnect,
       onDisconnect,
@@ -245,13 +240,7 @@ export const StatusDashboard = React.forwardRef<any, StatusDashboardProps>(
       onConnectionPress?.();
     }, [onConnectionPress]);
 
-    // テーマ切り替え処理
-    const handleThemeToggle = React.useCallback(
-      (theme: "light" | "dark") => {
-        onThemeToggle?.(theme);
-      },
-      [onThemeToggle]
-    );
+    // テーマ切り替え UI は廃止
 
     // アクセシビリティプロパティ
     const accessibilityProps = {
@@ -299,13 +288,7 @@ export const StatusDashboard = React.forwardRef<any, StatusDashboardProps>(
                 </M_Text>
               )}
 
-              {/* テーマ切り替えボタン */}
-              {showThemeToggle && (
-                <ThemeToggleButton
-                  size="medium"
-                  onThemeChange={handleThemeToggle}
-                />
-              )}
+              {/* テーマ切り替えボタンは削除 */}
             </XStack>
           </DashboardHeader>
         )}
@@ -478,13 +461,12 @@ export const GridStatusDashboard = React.forwardRef<
 
 export const MinimalStatusDashboard = React.forwardRef<
   any,
-  Omit<StatusDashboardProps, "variant" | "showHeader" | "showThemeToggle">
+  Omit<StatusDashboardProps, "variant" | "showHeader">
 >((props, ref) => (
   <StatusDashboard
     ref={ref}
     variant="transparent"
     showHeader={false}
-    showThemeToggle={false}
     compactMode={true}
     {...props}
   />

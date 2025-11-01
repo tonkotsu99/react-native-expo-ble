@@ -13,7 +13,6 @@ export type SettingsTemplateProps = {
   settings: SettingsValues;
   customSettingsItems?: SettingItem[];
   onSettingChange?: (key: keyof SettingsValues, value: any) => void;
-  onThemeChange?: (theme: "light" | "dark" | "system") => void;
   onUserIdSave?: (userId: string) => Promise<void>;
   onUserIdModalOpen?: () => void;
   userIdLoading?: boolean;
@@ -34,7 +33,6 @@ export function SettingsTemplate(props: SettingsTemplateProps) {
     settings,
     customSettingsItems,
     onSettingChange,
-    onThemeChange,
     onUserIdSave,
     onUserIdModalOpen,
     userIdLoading,
@@ -55,11 +53,18 @@ export function SettingsTemplate(props: SettingsTemplateProps) {
       <ScrollView contentContainerStyle={{ padding: 16 }}>
         <YStack space="$3">
           <SettingsPanel
+            sections={{
+              appearance: false,
+              notifications: true,
+              behavior: true,
+              data: true,
+              about: true,
+              userId: true,
+            }}
             variant="default"
             settings={settings}
             customItems={customSettingsItems}
             onSettingChange={onSettingChange}
-            onThemeChange={onThemeChange}
             onUserIdSave={onUserIdSave}
             onUserIdModalOpen={onUserIdModalOpen}
             userIdLoading={userIdLoading}

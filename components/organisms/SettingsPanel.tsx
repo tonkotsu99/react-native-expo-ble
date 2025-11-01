@@ -14,7 +14,6 @@ import React from "react";
 import type { YStackProps } from "tamagui";
 import { H3, H4, Input, styled, Switch, XStack, YStack } from "tamagui";
 import { M_Text } from "../atoms/M_Text";
-import { ThemeToggleButton } from "../atoms/ThemeToggleButton";
 
 // ベースとなるSettingsPanelスタイル
 const StyledSettingsPanel = styled(YStack, {
@@ -200,7 +199,6 @@ const getDefaultSections = (
     onOpenPrivacyPolicy,
     onOpenLicenses,
     onContactSupport,
-    onUserIdSave,
     onUserIdModalOpen,
     userIdLoading,
     userIdSaving,
@@ -384,7 +382,7 @@ export const SettingsPanel = React.forwardRef<any, SettingsPanelProps>(
       showHeader = true,
       compactMode = false,
       sections = {
-        appearance: true,
+        appearance: false,
         notifications: true,
         behavior: true,
         data: true,
@@ -510,13 +508,7 @@ export const SettingsPanel = React.forwardRef<any, SettingsPanelProps>(
             <H3 fontSize="$6" fontWeight="700" color="$color">
               {title}
             </H3>
-
-            {!compactMode && (
-              <ThemeToggleButton
-                size="medium"
-                onThemeChange={props.onThemeChange}
-              />
-            )}
+            {/* テーマ切り替えボタンは削除 */}
           </PanelHeader>
         )}
 
@@ -607,7 +599,7 @@ export const CompactSettingsPanel = React.forwardRef<
     compactMode={true}
     showHeader={false}
     sections={{
-      appearance: true,
+      appearance: false,
       notifications: false,
       behavior: true,
       data: false,
@@ -634,7 +626,7 @@ export const EssentialSettingsPanel = React.forwardRef<
   <SettingsPanel
     ref={ref}
     sections={{
-      appearance: true,
+      appearance: false,
       notifications: true,
       behavior: false,
       data: false,

@@ -2,10 +2,9 @@
 import React from "react";
 import { SafeAreaView } from "react-native";
 import type { YStackProps } from "tamagui";
-import { ScrollView, styled, useMedia, XStack, YStack } from "tamagui";
+import { ScrollView, styled, useMedia, YStack } from "tamagui";
 // ルータ移行に伴い内部ナビゲーション UI は撤去
 // 見出しテキストは内部メニュー撤去により未使用
-import { ThemeToggleButton } from "../atoms/ThemeToggleButton";
 import type { BLEConnectionStatus } from "../molecules/ConnectionVisualization";
 import type { LogEntryData } from "../molecules/LogEntry";
 // logs タブは廃止のため ActivityLog は使用しない
@@ -108,37 +107,7 @@ const Sidebar = styled(YStack, {
   } as const,
 });
 
-// フローチE��ングアクションボタン
-const FloatingActionButton = styled(XStack, {
-  name: "FloatingActionButton",
-  position: "absolute",
-  bottom: 20,
-  right: 20,
-  backgroundColor: "$blue10",
-  borderRadius: "$round",
-  padding: "$3",
-  shadowColor: "$shadowColor",
-  shadowOffset: { width: 0, height: 4 },
-  shadowOpacity: 0.2,
-  shadowRadius: 8,
-  elevation: 8,
-  space: "$2",
-  alignItems: "center",
-
-  variants: {
-    layout: {
-      mobile: {
-        // モバイルでのみ表示
-      },
-      tablet: {
-        display: "none",
-      },
-      desktop: {
-        display: "none",
-      },
-    },
-  } as const,
-});
+// テーマ切替ボタンは廃止のため FloatingActionButton は削除
 
 // ボトムナビゲーション�E�モバイル用�E�E
 // 内部ボトムナビは撤去
@@ -196,7 +165,6 @@ export type EnhancedMainTemplateProps = YStackProps & {
 
   // アプリ操作
   onAppStatePress?: (state: any) => void;
-  onThemeChange?: (theme: "light" | "dark" | "system") => void;
   onSettingChange?: (key: keyof SettingsValues, value: any) => void;
   onRefreshDashboard?: () => void;
   onUserIdSave?: (userId: string) => Promise<void>;
@@ -246,7 +214,6 @@ export const EnhancedMainTemplate = React.forwardRef<
     onReconnect,
     onCopyDeviceId,
     onAppStatePress,
-    onThemeChange,
     onSettingChange,
     onRefreshDashboard,
     onUserIdSave,
@@ -288,11 +255,9 @@ export const EnhancedMainTemplate = React.forwardRef<
             variant={detectedLayout === "desktop" ? "elevated" : "default"}
             dashboardState={dashboardState}
             showHeader={detectedLayout !== "mobile"}
-            showThemeToggle={detectedLayout === "mobile"}
             compactMode={detectedLayout === "mobile"}
             stackCards={detectedLayout === "mobile"}
             onAppStatePress={onAppStatePress}
-            onThemeToggle={onThemeChange}
             onRefresh={onRefreshDashboard}
             onReconnect={onReconnect}
             onDisconnect={onDisconnect}
@@ -333,14 +298,13 @@ export const EnhancedMainTemplate = React.forwardRef<
             compactMode={detectedLayout === "mobile"}
             sections={{
               userId: true,
-              appearance: true,
+              appearance: false,
               notifications: true,
               behavior: true,
               data: false,
               about: false,
             }}
             onSettingChange={onSettingChange}
-            onThemeChange={onThemeChange}
             onClearData={_onClearLogs}
             onExportData={_onExportLogs}
             onUserIdSave={onUserIdSave}
@@ -375,7 +339,6 @@ export const EnhancedMainTemplate = React.forwardRef<
                   variant="transparent"
                   dashboardState={dashboardState}
                   showHeader={false}
-                  showThemeToggle={false}
                   compactMode={true}
                   stackCards={true}
                   showConnectionDetails={false}
@@ -396,11 +359,7 @@ export const EnhancedMainTemplate = React.forwardRef<
       {/* 内部ボトムナビは Tabs に委譲するため削除 */}
 
       {/* フローチE��ングアクションボタン�E�モバイルのみ�E�E*/}
-      {detectedLayout === "mobile" && activeTab === "dashboard" && (
-        <FloatingActionButton layout={detectedLayout}>
-          <ThemeToggleButton size="medium" onThemeChange={onThemeChange} />
-        </FloatingActionButton>
-      )}
+      {/* テーマ切り替え用のフローティングボタンは削除 */}
 
       {/* フッターコンチE��チE*/}
       {footerContent}

@@ -19,7 +19,6 @@ export type DashboardTemplateProps = {
   onCopyDeviceId?: (id: string) => void;
   onAppStatePress?: (state: any) => void;
   onRefreshDashboard?: () => void;
-  onThemeChange?: (theme: "light" | "dark" | "system") => void;
   headerContent?: React.ReactNode;
   footerContent?: React.ReactNode;
   accessibilityLabel?: string;
@@ -39,7 +38,6 @@ export function DashboardTemplate(props: DashboardTemplateProps) {
     onDisconnect,
     onCopyDeviceId,
     onRefreshDashboard,
-    onThemeChange,
     headerContent,
     footerContent,
     accessibilityLabel,
@@ -60,11 +58,9 @@ export function DashboardTemplate(props: DashboardTemplateProps) {
             variant="default"
             dashboardState={dashboardState}
             showHeader={true}
-            showThemeToggle={true}
             compactMode={false}
             stackCards={false}
             onAppStatePress={onAppStatePress}
-            onThemeToggle={(t) => onThemeChange?.(t)}
             onRefresh={onRefreshDashboard}
             onReconnect={onReconnect}
             onDisconnect={onDisconnect}

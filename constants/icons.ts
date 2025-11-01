@@ -7,11 +7,9 @@ import {
   Clock,
   Home,
   MapPin,
-  Moon,
   Radio,
   RefreshCw,
   Settings,
-  Sun,
   User,
   Wifi,
   WifiOff,
@@ -48,11 +46,7 @@ export const ActionIcons = {
   powerOff: ZapOff,
 } as const;
 
-// テーマ用アイコン
-export const ThemeIcons = {
-  light: Sun,
-  dark: Moon,
-} as const;
+// テーマ用アイコンは廃止
 
 // ステータス用アイコン
 export const StatusIcons = {
@@ -83,7 +77,6 @@ export const IconColors = {
 export type AppStateIconType = keyof typeof AppStateIcons;
 export type BLEStateIconType = keyof typeof BLEStateIcons;
 export type ActionIconType = keyof typeof ActionIcons;
-export type ThemeIconType = keyof typeof ThemeIcons;
 export type StatusIconType = keyof typeof StatusIcons;
 export type IconSizeType = keyof typeof IconSizes;
 export type IconColorType = keyof typeof IconColors;

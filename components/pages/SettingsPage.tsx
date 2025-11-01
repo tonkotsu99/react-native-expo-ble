@@ -176,12 +176,7 @@ export default function SettingsPage() {
     [colorScheme, userId]
   );
 
-  const handleThemeChange = useCallback(
-    (theme: "light" | "dark" | "system") => {
-      console.log("テーマ変更:", theme);
-    },
-    []
-  );
+  // テーマ変更UIは撤去
 
   const handleSettingChange = useCallback(
     (key: keyof SettingsValues, value: any) => {
@@ -217,7 +212,6 @@ export default function SettingsPage() {
         settings={settings}
         customSettingsItems={customSettingsItems}
         onSettingChange={handleSettingChange}
-        onThemeChange={handleThemeChange}
         onUserIdSave={handleUserIdSave}
         onUserIdModalOpen={() => setIsUserIdModalOpen(true)}
         userIdLoading={loading}

@@ -33,7 +33,6 @@ export const AccessibilityLabels = {
       scan: "BLEスキャン開始",
       disconnect: "BLE接続を切断",
       save: "ユーザーID保存",
-      toggleTheme: "テーマ切り替え",
     };
     return actionLabels[action as keyof typeof actionLabels] || action;
   },

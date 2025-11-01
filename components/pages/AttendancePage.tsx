@@ -1101,13 +1101,7 @@ export default function AttendancePage({ initialActiveTab }: Props) {
     },
   ];
 
-  const handleThemeChange = useCallback(
-    (theme: "light" | "dark" | "system"): void => {
-      console.log("テーマ変更:", theme);
-      // テーマ変更ロジックを実装
-    },
-    []
-  );
+  // テーマ変更UIは撤去
 
   const handleSettingChange = useCallback(
     (key: keyof SettingsValues, value: any): void => {
@@ -1222,7 +1216,6 @@ export default function AttendancePage({ initialActiveTab }: Props) {
         onReconnect={handleReconnect}
         onCopyDeviceId={handleCopyDeviceId}
         onAppStatePress={handleAppStatePress}
-        onThemeChange={handleThemeChange}
         onSettingChange={handleSettingChange}
         onRefreshDashboard={handleRefreshDashboard}
         onLogPress={handleLogPress}

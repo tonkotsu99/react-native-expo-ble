@@ -54,8 +54,7 @@ Join our community of developers creating universal apps.
   - `components/pages/ConnectionPage.tsx`
   - `components/pages/SettingsPage.tsx`
 - Templates:
-  - `components/templates/EnhancedMainTemplate.tsx` (base responsive layout)
-  - Tab-focused wrappers:
+  - Tab-focused templates (compose organisms directly):
     - `components/templates/DashboardTemplate.tsx`
     - `components/templates/ConnectionTemplate.tsx`
     - `components/templates/SettingsTemplate.tsx`
@@ -71,4 +70,4 @@ Join our community of developers creating universal apps.
   - `DashboardPage.tsx`
   - `ConnectionPage.tsx`
   - `SettingsPage.tsx`
-- Pages compose organisms (`StatusDashboard`, `ConnectionPanel`, `SettingsPanel`) via `EnhancedMainTemplate` to follow Atomic Design.
+- Pages compose organisms (`StatusDashboard`, `ConnectionPanel`, `SettingsPanel`) directly via the tab templates (no EnhancedMainTemplate).
