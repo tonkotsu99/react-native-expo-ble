@@ -1,4 +1,4 @@
-import { Activity, Menu, Settings, Wifi } from "@tamagui/lucide-icons";
+import { Activity, Settings, Wifi } from "@tamagui/lucide-icons";
 import React from "react";
 import { SafeAreaView } from "react-native";
 import type { YStackProps } from "tamagui";
@@ -8,7 +8,7 @@ import { M_Text } from "../atoms/M_Text";
 import { ThemeToggleButton } from "../atoms/ThemeToggleButton";
 import type { BLEConnectionStatus } from "../molecules/ConnectionVisualization";
 import type { LogEntryData } from "../molecules/LogEntry";
-import { ActivityLog } from "../organisms/ActivityLog";
+// logs タブは廃止のため ActivityLog は使用しない
 import { ConnectionPanel } from "../organisms/ConnectionPanel";
 import {
   SettingsPanel,
@@ -170,7 +170,7 @@ const BottomNavigation = styled(XStack, {
 export type LayoutType = "mobile" | "tablet" | "desktop";
 
 // ナビゲーションタチE
-export type NavigationTab = "dashboard" | "connection" | "logs" | "settings";
+export type NavigationTab = "dashboard" | "connection" | "settings";
 
 // DeviceInfo型！EonnectionVisualizationから忁E��E��E
 export type DeviceInfo = {
@@ -243,6 +243,8 @@ export type EnhancedMainTemplateProps = YStackProps & {
   customContent?: React.ReactNode;
   headerContent?: React.ReactNode;
   footerContent?: React.ReactNode;
+  // Router 管理タブ時に内部のボトムナビを抑止する
+  hideBottomNavigation?: boolean;
 
   accessibilityLabel?: string;
 };
@@ -260,7 +262,6 @@ export const EnhancedMainTemplate = React.forwardRef<
     connectionStatus,
     deviceInfo,
     connectionProcess,
-    logs,
     settings,
     customSettingsItems,
     onStartScan,
@@ -277,18 +278,16 @@ export const EnhancedMainTemplate = React.forwardRef<
     onUserIdModalOpen,
     userIdLoading = false,
     userIdSaving = false,
-    onLogPress,
-    onLogDetails,
-    onRefreshLogs,
-    onClearLogs,
-    onExportLogs,
-    isLoading = false,
+    // logs タブは廃止（一部設定用ハンドラのみ利用）
+    onClearLogs: _onClearLogs,
+    onExportLogs: _onExportLogs,
     hasPermissions = true,
     bluetoothEnabled = true,
     customContent,
     headerContent,
     footerContent,
     accessibilityLabel,
+    hideBottomNavigation = false,
   } = props;
 
   // メチE��アクエリでレスポンシブレイアウトを自動判宁E
@@ -353,23 +352,7 @@ export const EnhancedMainTemplate = React.forwardRef<
           />
         );
 
-      case "logs":
-        return (
-          <ActivityLog
-            variant={detectedLayout === "mobile" ? "default" : "card"}
-            size={detectedLayout === "mobile" ? "medium" : "large"}
-            logs={logs}
-            isLoading={isLoading}
-            showHeader={detectedLayout !== "mobile"}
-            entryVariant={detectedLayout === "mobile" ? "compact" : "default"}
-            maxEntries={detectedLayout === "mobile" ? 20 : 50}
-            onLogPress={onLogPress}
-            onLogDetails={onLogDetails}
-            onRefresh={onRefreshLogs}
-            onClearAll={onClearLogs}
-            onExport={onExportLogs}
-          />
-        );
+      // logs タブは廃止
 
       case "settings":
         return (
@@ -389,8 +372,8 @@ export const EnhancedMainTemplate = React.forwardRef<
             }}
             onSettingChange={onSettingChange}
             onThemeChange={onThemeChange}
-            onClearData={onClearLogs}
-            onExportData={onExportLogs}
+            onClearData={_onClearLogs}
+            onExportData={_onExportLogs}
             onUserIdSave={onUserIdSave}
             onUserIdModalOpen={onUserIdModalOpen}
             userIdLoading={userIdLoading}
@@ -445,15 +428,7 @@ export const EnhancedMainTemplate = React.forwardRef<
                   BLE接綁E
                 </IconButton>
 
-                <IconButton
-                  variant={activeTab === "logs" ? "solid" : "ghost"}
-                  size="medium"
-                  icon={Activity}
-                  onPress={() => handleTabChange("logs")}
-                  justifyContent="flex-start"
-                >
-                  アクチE��ビティ
-                </IconButton>
+                {/* logs タブは廃止 */}
 
                 <IconButton
                   variant={activeTab === "settings" ? "solid" : "ghost"}
@@ -492,7 +467,7 @@ export const EnhancedMainTemplate = React.forwardRef<
       </ResponsiveContainer>
 
       {/* ボトムナビゲーション�E�モバイルのみ�E�E*/}
-      {detectedLayout === "mobile" && (
+      {detectedLayout === "mobile" && !hideBottomNavigation && (
         <BottomNavigation layout={detectedLayout}>
           <IconButton
             variant={activeTab === "dashboard" ? "solid" : "ghost"}
@@ -510,13 +485,7 @@ export const EnhancedMainTemplate = React.forwardRef<
             iconOnly
           />
 
-          <IconButton
-            variant={activeTab === "logs" ? "solid" : "ghost"}
-            size="$3"
-            icon={Menu}
-            onPress={() => handleTabChange("logs")}
-            iconOnly
-          />
+          {/* logs タブは廃止 */}
 
           <IconButton
             variant={activeTab === "settings" ? "solid" : "ghost"}

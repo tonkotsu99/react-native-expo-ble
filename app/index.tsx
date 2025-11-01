@@ -1,3 +1,5 @@
-import AttendancePage from "@/components/pages/AttendancePage";
+import { Redirect } from "expo-router";
 
-export default AttendancePage;
+export default function IndexRedirect() {
+	return <Redirect href={"/(tabs)" as any} />;
+}
