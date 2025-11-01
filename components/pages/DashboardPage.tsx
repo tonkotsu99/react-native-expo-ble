@@ -1,15 +1,21 @@
 import type { BLEConnectionStatus } from "@/components/molecules/ConnectionVisualization";
 import { DashboardTemplate } from "@/components/templates/DashboardTemplate";
-import { useBLE } from "@/hooks/useBLE";
+import { useBLEContext } from "@/hooks/bleContext";
+import { useAppState } from "@/hooks/useAppState";
 import { useRequireUserId } from "@/hooks/useRequireUserId";
 import { useUserProfile } from "@/hooks/useUserProfile";
-import { getAppState, type AppState } from "@/state/appState";
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useMemo, useState } from "react";
 
 export default function DashboardPage() {
   // Hooks
-  const { requestPermissions, startScan, disconnectDevice, connectedDevice } =
-    useBLE();
+  const {
+    requestPermissions,
+    startScan,
+    disconnectDevice,
+    connectedDevice,
+    connectedRssi,
+    refresh,
+  } = useBLEContext();
 
   // Ensure we reference the real persisted userId
   const { userId, loading } = useUserProfile();
@@ -17,19 +23,10 @@ export default function DashboardPage() {
 
   // Local state
   const [isScanning, setIsScanning] = useState(false);
-  const [appState, setAppStateLocal] = useState<AppState>("OUTSIDE");
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const appState = useAppState();
 
-  // Initialize app state once
-  useEffect(() => {
-    (async () => {
-      try {
-        const s = await getAppState();
-        setAppStateLocal(s);
-      } catch (e) {
-        console.warn("Failed to read app state", e);
-      }
-    })();
-  }, []);
+  // App state is kept in sync by useAppState
 
   const bleConnectionStatus: BLEConnectionStatus = useMemo(() => {
     return connectedDevice
@@ -48,14 +45,14 @@ export default function DashboardPage() {
         ? {
             id: connectedDevice.id,
             name: connectedDevice.name || "Unknown Device",
-            rssi: connectedDevice.rssi || undefined,
+            rssi: (connectedRssi ?? connectedDevice.rssi) || undefined,
           }
         : undefined,
       lastUpdated: new Date(),
       isOnline: true,
       hasUnreadLogs: false,
     }),
-    [appState, bleConnectionStatus, connectedDevice]
+    [appState, bleConnectionStatus, connectedDevice, connectedRssi]
   );
 
   const handleScan = useCallback(async () => {
@@ -99,8 +96,18 @@ export default function DashboardPage() {
   }, []);
 
   const handleRefreshDashboard = useCallback(() => {
-    console.log("Dashboard refreshed");
-  }, []);
+    setIsRefreshing(true);
+    (async () => {
+      try {
+        // Refresh app state from storage
+        // Lightweight BLE sync: adopt existing connections without scanning
+        await requestPermissions();
+        await refresh();
+      } finally {
+        setTimeout(() => setIsRefreshing(false), 300);
+      }
+    })();
+  }, [requestPermissions, refresh]);
 
   return (
     <DashboardTemplate
@@ -111,10 +118,11 @@ export default function DashboardPage() {
           ? {
               id: connectedDevice.id,
               name: connectedDevice.name || "Unknown Device",
-              rssi: connectedDevice.rssi || undefined,
+              rssi: (connectedRssi ?? connectedDevice.rssi) || undefined,
             }
           : undefined
       }
+      isRefreshing={isRefreshing}
       onReconnect={handleReconnect}
       onDisconnect={handleDisconnect}
       onCopyDeviceId={handleCopyDeviceId}

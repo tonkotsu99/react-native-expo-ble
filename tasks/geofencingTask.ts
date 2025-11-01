@@ -5,7 +5,12 @@ import {
 import * as TaskManager from "expo-task-manager";
 import BackgroundFetch from "react-native-background-fetch";
 import { bleManager } from "../bluetooth/bleManagerInstance";
-import { API_URL_ENTER, API_URL_EXIT, BLE_SERVICE_UUID } from "../constants";
+import {
+  API_URL_ENTER,
+  API_URL_EXIT,
+  BLE_DEVICE_NAME_PREFIXES,
+  BLE_SERVICE_UUIDS,
+} from "../constants";
 import {
   getAppState,
   getInsideAreaReportStatus,
@@ -57,37 +62,91 @@ const postAttendance = async (
  * バックグラウンドでBLEデバイスに接続を試みる関数
  */
 const tryConnectBleDevice = () => {
-  bleManager.startDeviceScan([BLE_SERVICE_UUID], null, (scanError, device) => {
+  const normalizedServiceUUIDs = BLE_SERVICE_UUIDS.map((u) => u.toLowerCase());
+  const normalizedNamePrefixes = BLE_DEVICE_NAME_PREFIXES.map((p) =>
+    p.toLowerCase()
+  );
+
+  let settled = false;
+  const finish = () => {
+    if (settled) return;
+    settled = true;
+    try {
+      bleManager.stopDeviceScan();
+    } catch {}
+  };
+
+  const timeoutMs = 15000;
+  const timeoutId = setTimeout(() => {
+    console.warn("[Geofencing Task] Scan timeout");
+    finish();
+  }, timeoutMs);
+
+  console.log("[Geofencing Task] BG scan started", { timeoutMs });
+
+  // Broad scan + JS filtering for iOS reliability
+  bleManager.startDeviceScan(null, null, async (scanError, device) => {
+    if (settled) return;
+
     if (scanError) {
       console.error("[Geofencing Task] Scan Error:", scanError);
-      bleManager.stopDeviceScan();
+      clearTimeout(timeoutId);
+      finish();
       return;
     }
 
-    if (device) {
-      bleManager.stopDeviceScan();
-      device
-        .connect()
-        .then(async (connectedDevice) => {
-          console.log(
-            "[Geofencing Task] Background connect success:",
-            connectedDevice.name
-          );
-          await setAppState("PRESENT");
-          await postAttendance(API_URL_ENTER, {
-            deviceId: connectedDevice.id,
-            deviceName: connectedDevice.name,
-          });
-          // BLE接続成功通知を送信
-          await sendBleConnectedNotification(connectedDevice.name);
-          // 接続維持や切断監視が必要な場合はここに追加
-        })
-        .catch((connectError) => {
-          console.error(
-            "[Geofencing Task] Background connect error:",
-            connectError
-          );
-        });
+    if (!device) return;
+
+    const serviceUUIDs = device.serviceUUIDs?.map((u) => u.toLowerCase());
+    const deviceName = device.name?.toLowerCase() ?? "";
+    const matchesService = serviceUUIDs
+      ? serviceUUIDs.some((u) => normalizedServiceUUIDs.includes(u))
+      : false;
+    const matchesName = normalizedNamePrefixes.some((p) =>
+      deviceName.startsWith(p)
+    );
+
+    console.log("[Geofencing Task] Scan device", {
+      id: device.id,
+      name: device.name,
+      rssi: device.rssi,
+      serviceUUIDs: device.serviceUUIDs,
+      matchesService,
+      matchesName,
+    });
+
+    // Be conservative in background: require at least name prefix match
+    if (!matchesName && !matchesService) {
+      return; // ignore non-target devices
+    }
+
+    clearTimeout(timeoutId);
+    finish();
+    try {
+      console.log("[Geofencing Task] Match Found", {
+        id: device.id,
+        name: device.name,
+        rssi: device.rssi,
+        matchesService,
+        matchesName,
+      });
+      const connected = await device.connect();
+      await connected.discoverAllServicesAndCharacteristics();
+      console.log(
+        "[Geofencing Task] Background connect success:",
+        connected.name
+      );
+      await setAppState("PRESENT");
+      await postAttendance(API_URL_ENTER, {
+        deviceId: connected.id,
+        deviceName: connected.name,
+      });
+      await sendBleConnectedNotification(connected.name);
+    } catch (connectError) {
+      console.error(
+        "[Geofencing Task] Background connect error:",
+        connectError
+      );
     }
   });
 };

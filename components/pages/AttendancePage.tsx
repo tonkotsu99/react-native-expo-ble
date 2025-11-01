@@ -24,8 +24,13 @@ type Props = {
 
 export default function AttendancePage({ initialActiveTab }: Props) {
   // カスタムhookの使用
-  const { requestPermissions, startScan, disconnectDevice, connectedDevice } =
-    useBLE();
+  const {
+    requestPermissions,
+    startScan,
+    disconnectDevice,
+    connectedDevice,
+    connectedRssi,
+  } = useBLE();
   const {
     userId,
     loading,
@@ -225,7 +230,7 @@ export default function AttendancePage({ initialActiveTab }: Props) {
       ? {
           id: connectedDevice.id,
           name: connectedDevice.name || "Unknown Device",
-          rssi: connectedDevice.rssi || undefined,
+          rssi: (connectedRssi ?? connectedDevice.rssi) || undefined,
         }
       : undefined,
     lastUpdated: new Date(),
@@ -1210,7 +1215,7 @@ export default function AttendancePage({ initialActiveTab }: Props) {
             ? {
                 id: connectedDevice.id,
                 name: connectedDevice.name || "Unknown Device",
-                rssi: connectedDevice.rssi || undefined,
+                rssi: (connectedRssi ?? connectedDevice.rssi) || undefined,
               }
             : undefined
         }

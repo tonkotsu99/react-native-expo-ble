@@ -3,7 +3,11 @@ import BackgroundFetch from "react-native-background-fetch";
 import type { Device } from "react-native-ble-plx";
 import { State } from "react-native-ble-plx";
 import { bleManager } from "../bluetooth/bleManagerInstance";
-import { API_URL_ENTER, BLE_SERVICE_UUID } from "../constants";
+import {
+  API_URL_ENTER,
+  BLE_DEVICE_NAME_PREFIXES,
+  BLE_SERVICE_UUIDS,
+} from "../constants";
 import type { AppState } from "../state/appState";
 import {
   getAppState,
@@ -96,7 +100,8 @@ const scanAndReconnect = async (previousState: AppState): Promise<boolean> => {
       finish(false);
     }, SCAN_TIMEOUT_MS);
 
-    bleManager.startDeviceScan([BLE_SERVICE_UUID], null, (error, device) => {
+    // Broad scan + JS filters for iOS reliability
+    bleManager.startDeviceScan(null, null, (error, device) => {
       if (error) {
         console.error(`${LOG_PREFIX} Scan error:`, error);
         finish(false);
@@ -105,6 +110,25 @@ const scanAndReconnect = async (previousState: AppState): Promise<boolean> => {
 
       if (!device) {
         return;
+      }
+
+      const normalizedServiceUUIDs = BLE_SERVICE_UUIDS.map((u) =>
+        u.toLowerCase()
+      );
+      const normalizedNamePrefixes = BLE_DEVICE_NAME_PREFIXES.map((p) =>
+        p.toLowerCase()
+      );
+      const serviceUUIDs = device.serviceUUIDs?.map((u) => u.toLowerCase());
+      const deviceName = device.name?.toLowerCase() ?? "";
+      const matchesService = serviceUUIDs
+        ? serviceUUIDs.some((u) => normalizedServiceUUIDs.includes(u))
+        : false;
+      const matchesName = normalizedNamePrefixes.some((p) =>
+        deviceName.startsWith(p)
+      );
+
+      if (!matchesService && !matchesName) {
+        return; // ignore non-target devices
       }
 
       // Stop scanning while attempting to connect so we don't process multiple devices.
@@ -142,9 +166,7 @@ const scanAndReconnect = async (previousState: AppState): Promise<boolean> => {
 const periodicTask = async (taskId: string) => {
   console.log("[BackgroundFetch] taskId:", taskId);
   const previousState = await getAppState();
-  const connectedDevices = await bleManager.connectedDevices([
-    BLE_SERVICE_UUID,
-  ]);
+  const connectedDevices = await bleManager.connectedDevices(BLE_SERVICE_UUIDS);
 
   if (connectedDevices.length > 0) {
     const [device] = connectedDevices;

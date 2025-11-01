@@ -146,15 +146,7 @@ const getRSSILevel = (rssi?: number): number => {
   return 0; // 非常に弱い
 };
 
-// RSSI値を説明テキストに変換
-const getRSSIDescription = (rssi?: number): string => {
-  if (!rssi) return "不明";
-  if (rssi >= -50) return "非常に強い";
-  if (rssi >= -60) return "強い";
-  if (rssi >= -70) return "中程度";
-  if (rssi >= -80) return "弱い";
-  return "非常に弱い";
-};
+// 旧: RSSI値の説明文は未使用のため削除しました
 
 // ConnectionVisualization プロパティ
 export type ConnectionVisualizationProps = CardProps & {
@@ -192,7 +184,7 @@ export const ConnectionVisualization = React.forwardRef<
 
   const connectionMessage = getConnectionMessage(status);
   const signalLevel = getRSSILevel(deviceInfo?.rssi);
-  const rssiDescription = getRSSIDescription(deviceInfo?.rssi);
+  // const rssiDescription = getRSSIDescription(deviceInfo?.rssi); // currently unused
 
   // BLEアイコンキーマッピング
   const getBLEIconKey = (status: BLEConnectionStatus): BLEStateIconType => {
@@ -287,11 +279,6 @@ export const ConnectionVisualization = React.forwardRef<
                   />
                 ))}
               </SignalStrengthIndicator>
-              {deviceInfo?.rssi && (
-                <M_Text fontSize="$2" color="$color11">
-                  {rssiDescription}
-                </M_Text>
-              )}
             </XStack>
           )}
         </XStack>

@@ -6,7 +6,7 @@ import { AnimatedSpinner } from "../atoms/AnimatedSpinner";
 import { IconButton } from "../atoms/IconButton";
 import { M_Text } from "../atoms/M_Text";
 
-// ベ�EスとなるProgressIndicatorスタイル
+// ベ�EスとなるProgressIndicatorスタイル
 const StyledProgressCard = styled(Card, {
   name: "ProgressIndicator",
   padding: "$4",
@@ -19,7 +19,7 @@ const StyledProgressCard = styled(Card, {
   variants: {
     variant: {
       default: {
-        // チE��ォルトスタイル
+        // チE��ォルトスタイル
       },
       compact: {
         padding: "$3",
@@ -66,7 +66,7 @@ const StyledProgressCard = styled(Card, {
   },
 });
 
-// プログレスバ�Eのスタイル
+// プログレスバ�Eのスタイル
 const StyledProgress = styled(Progress, {
   name: "StyledProgress",
   height: 8,
@@ -107,7 +107,7 @@ const StyledProgress = styled(Progress, {
   },
 });
 
-// 進行状況�E状慁E
+// 進行状況�E状慁E
 export type ProgressStatus = "active" | "paused" | "completed" | "error";
 
 // 進行段隁E
@@ -131,7 +131,7 @@ export type ProgressIndicatorProps = CardProps & {
   showProgressBar?: boolean;
   progressSize?: "small" | "medium" | "large";
 
-  // タスク惁E��
+  // タスク惁E��
   title?: string;
   description?: string;
   currentStep?: string;
@@ -143,7 +143,7 @@ export type ProgressIndicatorProps = CardProps & {
   elapsedTime?: number; // 私E
   showTimer?: boolean;
 
-  // スチE��プ表示
+  // スチE��プ表示
   steps?: ProgressStep[];
   showStepList?: boolean;
 
@@ -172,21 +172,21 @@ const formatTime = (seconds: number): string => {
   return `${secs}秒`;
 };
 
-// 進行率からメチE��ージを生戁E
+// 進行率からメチE��ージを生戁E
 const getProgressMessage = (
   progress: number,
   status: ProgressStatus
 ): string => {
-  if (status === "completed") return "完亁E��ました";
+  if (status === "completed") return "完亁E��ました";
   if (status === "error") return "エラーが発生しました";
   if (status === "paused") return "一時停止中";
 
   if (progress === 0) return "開始中...";
-  if (progress < 25) return "処琁E��...";
+  if (progress < 25) return "処琁E��...";
   if (progress < 50) return "進行中...";
   if (progress < 75) return "もう少しでぁE..";
-  if (progress < 100) return "完亁E��迁E..";
-  return "処琁E��...";
+  if (progress < 100) return "完亁E��迁E..";
+  return "処琁E��...";
 };
 
 export const ProgressIndicator = React.forwardRef<any, ProgressIndicatorProps>(
@@ -238,7 +238,7 @@ export const ProgressIndicator = React.forwardRef<any, ProgressIndicatorProps>(
       }
     }, [isPaused, onPause, onResume]);
 
-    // アクセシビリチE��プロパティ
+    // アクセシビリチE��プロパティ
     const accessibilityProps = {
       accessibilityLabel:
         accessibilityLabel ||
@@ -317,7 +317,7 @@ export const ProgressIndicator = React.forwardRef<any, ProgressIndicatorProps>(
               {/* 一時停止/再開ボタン */}
               {canPause && !isCompleted && !hasError && (
                 <IconButton
-                  size="$3"
+                  size="small"
                   variant="ghost"
                   icon={isPaused ? Play : Pause}
                   onPress={handlePauseResume}
@@ -328,7 +328,7 @@ export const ProgressIndicator = React.forwardRef<any, ProgressIndicatorProps>(
               {/* キャンセルボタン */}
               {canCancel && !isCompleted && (
                 <IconButton
-                  size="$3"
+                  size="small"
                   variant="ghost"
                   icon={X}
                   onPress={handleCancel}
@@ -338,7 +338,7 @@ export const ProgressIndicator = React.forwardRef<any, ProgressIndicatorProps>(
             </XStack>
           </XStack>
 
-          {/* プログレスバ�E */}
+          {/* プログレスバ�E */}
           {showProgressBar && (
             <StyledProgress
               status={status}
@@ -348,7 +348,7 @@ export const ProgressIndicator = React.forwardRef<any, ProgressIndicatorProps>(
             />
           )}
 
-          {/* スチE��プ情報 */}
+          {/* スチE��プ情報 */}
           {(currentStep || (totalSteps && completedSteps !== undefined)) &&
             variant !== "minimal" && (
               <XStack alignItems="center" justifyContent="space-between">
@@ -366,7 +366,7 @@ export const ProgressIndicator = React.forwardRef<any, ProgressIndicatorProps>(
               </XStack>
             )}
 
-          {/* 時間惁E�� */}
+          {/* 時間惁E�� */}
           {showTimer &&
             (elapsedTime !== undefined ||
               estimatedTimeRemaining !== undefined) &&
@@ -386,7 +386,7 @@ export const ProgressIndicator = React.forwardRef<any, ProgressIndicatorProps>(
               </XStack>
             )}
 
-          {/* スチE��プリスチE*/}
+          {/* スチE��プリスチE*/}
           {showStepList && steps && variant === "default" && (
             <YStack
               space="$2"
@@ -435,7 +435,7 @@ export const ProgressIndicator = React.forwardRef<any, ProgressIndicatorProps>(
 
 ProgressIndicator.displayName = "ProgressIndicator";
 
-// プリセチE��コンポ�EネンチE
+// プリセチE��コンポ�EネンチE
 export const CompactProgressIndicator = React.forwardRef<
   any,
   Omit<ProgressIndicatorProps, "variant">

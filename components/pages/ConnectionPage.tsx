@@ -1,13 +1,19 @@
 import type { BLEConnectionStatus } from "@/components/molecules/ConnectionVisualization";
 import { ConnectionTemplate } from "@/components/templates/ConnectionTemplate";
-import { useBLE } from "@/hooks/useBLE";
+import { useBLEContext } from "@/hooks/bleContext";
+import { useAppState } from "@/hooks/useAppState";
 import { useRequireUserId } from "@/hooks/useRequireUserId";
 import { useUserProfile } from "@/hooks/useUserProfile";
 import React, { useCallback, useMemo, useState } from "react";
 
 export default function ConnectionPage() {
-  const { requestPermissions, startScan, disconnectDevice, connectedDevice } =
-    useBLE();
+  const {
+    requestPermissions,
+    startScan,
+    disconnectDevice,
+    connectedDevice,
+    connectedRssi,
+  } = useBLEContext();
 
   // Use persisted userId so connection actions don't get blocked incorrectly
   const { userId, loading } = useUserProfile();
@@ -16,6 +22,7 @@ export default function ConnectionPage() {
   const [isScanning, setIsScanning] = useState(false);
   const [hasPermissions, setHasPermissions] = useState(false);
   const [bluetoothEnabled] = useState(true);
+  const appState = useAppState();
 
   const bleConnectionStatus: BLEConnectionStatus = useMemo(() => {
     return connectedDevice
@@ -77,14 +84,14 @@ export default function ConnectionPage() {
   return (
     <ConnectionTemplate
       dashboardState={{
-        appState: "OUTSIDE",
+        appState,
         appStateTimestamp: new Date(),
         bleConnectionStatus,
         deviceInfo: connectedDevice
           ? {
               id: connectedDevice.id,
               name: connectedDevice.name || "Unknown Device",
-              rssi: connectedDevice.rssi || undefined,
+              rssi: (connectedRssi ?? connectedDevice.rssi) || undefined,
             }
           : undefined,
         lastUpdated: new Date(),
@@ -97,7 +104,7 @@ export default function ConnectionPage() {
           ? {
               id: connectedDevice.id,
               name: connectedDevice.name || "Unknown Device",
-              rssi: connectedDevice.rssi || undefined,
+              rssi: (connectedRssi ?? connectedDevice.rssi) || undefined,
             }
           : undefined
       }

@@ -1,3 +1,4 @@
+import { BLEProvider } from "@/hooks/bleContext";
 import { useGeofencing } from "@/hooks/useGeofencing";
 import tamaguiConfig from "@/tamagui.config";
 import {
@@ -24,7 +25,9 @@ export default function RootLayout() {
       <SafeAreaProvider>
         <PortalProvider>
           <StatusBar />
-          <Slot />
+          <BLEProvider>
+            <Slot />
+          </BLEProvider>
         </PortalProvider>
       </SafeAreaProvider>
     </TamaguiProvider>

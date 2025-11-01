@@ -29,4 +29,4 @@ export const API_URL_INSIDE_AREA =
 // ---------------------------------
 
 // Debug flags
-export const DEBUG_BLE = false; // set to false to silence debug notifications
+export const DEBUG_BLE = true; // set to false to silence debug notifications

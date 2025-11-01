@@ -1,8 +1,8 @@
 import type { SettingsValues } from "@/components/organisms/SettingsPanel";
 import { UserIdModal } from "@/components/organisms/UserIdModal";
 import { SettingsTemplate } from "@/components/templates/SettingsTemplate";
+import { useBLEContext } from "@/hooks/bleContext";
 import { useAttendanceUserId } from "@/hooks/useAttendanceUserId";
-import { useBLE } from "@/hooks/useBLE";
 import { getAppState, setAppState, type AppState } from "@/state/appState";
 import { MapPin } from "@tamagui/lucide-icons";
 import * as Location from "expo-location";
@@ -11,7 +11,7 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useColorScheme } from "react-native";
 
 export default function SettingsPage() {
-  const { requestPermissions } = useBLE();
+  const { requestPermissions } = useBLEContext();
   const {
     userId,
     loading,

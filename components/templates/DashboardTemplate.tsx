@@ -7,6 +7,7 @@ import {
   type DashboardState,
 } from "@/components/organisms/StatusDashboard";
 import React from "react";
+import { RefreshControl } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { ScrollView, styled, YStack } from "tamagui";
 
@@ -14,6 +15,7 @@ export type DashboardTemplateProps = {
   dashboardState: DashboardState;
   connectionStatus: BLEConnectionStatus;
   deviceInfo?: DeviceInfo;
+  isRefreshing?: boolean;
   onReconnect?: () => void;
   onDisconnect?: () => void;
   onCopyDeviceId?: (id: string) => void;
@@ -38,6 +40,7 @@ export function DashboardTemplate(props: DashboardTemplateProps) {
     onDisconnect,
     onCopyDeviceId,
     onRefreshDashboard,
+    isRefreshing = false,
     headerContent,
     footerContent,
     accessibilityLabel,
@@ -51,7 +54,19 @@ export function DashboardTemplate(props: DashboardTemplateProps) {
   return (
     <Root {...a11y}>
       {headerContent}
-      <ScrollView contentContainerStyle={{ padding: 16 }}>
+      <ScrollView
+        contentContainerStyle={{ padding: 16 }}
+        refreshControl={
+          onRefreshDashboard ? (
+            <RefreshControl
+              refreshing={isRefreshing}
+              onRefresh={onRefreshDashboard}
+              tintColor="#3b82f6"
+              colors={["#3b82f6"]}
+            />
+          ) : undefined
+        }
+      >
         <YStack space="$3">
           <StatusDashboard
             layout="default"
