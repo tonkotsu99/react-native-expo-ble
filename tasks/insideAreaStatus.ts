@@ -8,7 +8,7 @@ export type InsideAreaStatusMetadata = {
   latitude?: number | null;
   longitude?: number | null;
   radius?: number | null;
-  source: "geofence" | "periodic";
+  source: "geofence" | "periodic" | "ble" | "ble_disconnect";
 };
 
 export const postInsideAreaStatus = async (

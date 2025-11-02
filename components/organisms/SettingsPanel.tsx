@@ -202,12 +202,6 @@ export const SettingsPanel = React.forwardRef<any, SettingsPanelProps>(
       ...restProps
     } = props;
 
-    // ユーザーIDのドラフト入力を内部状態で管理
-    const [draftUserId, setDraftUserId] = React.useState(settings.userId ?? "");
-    React.useEffect(() => {
-      setDraftUserId(settings.userId ?? "");
-    }, [settings.userId]);
-
     // デフォルトセクションの構築（appearance は非表示だが互換のため残置）
     const defaultSections: { [key: string]: SettingItem[] } = {
       userId: [

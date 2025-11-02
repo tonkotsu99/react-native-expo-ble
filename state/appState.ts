@@ -1,3 +1,4 @@
+import { postInsideAreaStatus } from "@/tasks/insideAreaStatus";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 // アプリの状態を定義
@@ -55,4 +56,13 @@ export const setAppState = async (state: AppState): Promise<void> => {
       } catch {}
     });
   } catch {}
+
+  // If PRESENT -> INSIDE_AREA, report "inside area" to server (fire-and-forget)
+  if (previousState === "PRESENT" && state === "INSIDE_AREA") {
+    postInsideAreaStatus({ source: "ble" })
+      .then((ok) => {
+        if (ok) return setInsideAreaReportStatus(true);
+      })
+      .catch(() => {});
+  }
 };
