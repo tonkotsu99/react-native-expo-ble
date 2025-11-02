@@ -1,8 +1,4 @@
-import {
-  Activity,
-  Settings as SettingsIcon,
-  Wifi,
-} from "@tamagui/lucide-icons";
+import { Activity, Settings as SettingsIcon } from "@tamagui/lucide-icons";
 import { Tabs } from "expo-router";
 import React from "react";
 import { Pressable, View } from "react-native";
@@ -46,17 +42,6 @@ export default function TabsLayout() {
             // lucide icons don't use size/color props directly in RN, but keep minimal here
             <View pointerEvents="none">
               <Activity color={color as any} size={28 as any} />
-            </View>
-          ),
-        }}
-      />
-      <Tabs.Screen
-        name="connection"
-        options={{
-          title: "Connection",
-          tabBarIcon: ({ color }) => (
-            <View pointerEvents="none">
-              <Wifi color={color as any} size={28 as any} />
             </View>
           ),
         }}

@@ -24,7 +24,7 @@
 ### アーキテクチャパターン
 
 - エントリーポイントは `expo-router/entry`。`app/_layout.tsx` で `TamaguiProvider` によるラップと `StatusBar` マウント、`useGeofencing()` の初期化を 1 回だけ行う。
-- 既定のルート `app/index.tsx` は `(tabs)` にリダイレクトし、各タブは専用のページ（`DashboardPage`/`ConnectionPage`/`SettingsPage`）をレンダリングする。
+- 既定のルート `app/index.tsx` は `(tabs)` にリダイレクトし、タブは `DashboardPage` と `SettingsPage` の 2 画面をレンダリングする。ダッシュボードに BLE 手動操作を集約し、別タブを必要としない。
 - BLE 制御は `hooks/useBLE.ts` に集約し、共有の `bleManager` シングルトンを利用してパーミッション確認・接続・出席 API 送信を行う。
 - ジオフェンス系のバックグラウンド処理は `hooks/useGeofencing.ts` で登録され、`tasks/geofencingTask.ts` と `tasks/periodicCheckTask.ts` に実装を分担する。
 - 永続化されたアプリ状態（`OUTSIDE`, `INSIDE_AREA`, `PRESENT`, `UNCONFIRMED`）は `state/appState.ts` で管理し、バックグラウンドタスクの挙動判断に利用する。
