@@ -5,7 +5,7 @@ import {
   BLE_SERVICE_UUIDS,
   DEBUG_BLE,
 } from "@/constants";
-import { getAppState, setAppState } from "@/state/appState";
+import { getAppState, setAppState, subscribeAppState } from "@/state/appState";
 import { getUserId } from "@/state/userProfile";
 import {
   sendBleConnectedNotification,
@@ -245,6 +245,22 @@ export const useBLE = (): UseBLE => {
       } catch {}
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    const unsubscribe = subscribeAppState((state) => {
+      if (state !== "PRESENT") {
+        clearRssiInterval();
+        setConnectedDevice(null);
+        setConnectedRssi(null);
+      }
+    });
+
+    return () => {
+      try {
+        unsubscribe();
+      } catch {}
+    };
   }, []);
 
   const connectToDevice = async (device: Device): Promise<void> => {

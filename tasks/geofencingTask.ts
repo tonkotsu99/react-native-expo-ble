@@ -20,6 +20,7 @@ import {
 import { getUserId } from "../state/userProfile";
 import {
   sendBleConnectedNotification,
+  sendBleDisconnectedNotification,
   sendDebugNotification,
   sendGeofenceEnterNotification,
   sendGeofenceExitNotification,
@@ -29,6 +30,63 @@ import { initPeriodicTask } from "./periodicCheckTask";
 
 const GEOFENCING_TASK_NAME = "background-geofencing-task";
 let backgroundFetchStarted = false;
+let geofenceDisconnectSubscription: { remove(): void } | null = null;
+let geofenceConnectionPoll: ReturnType<typeof setInterval> | null = null;
+let geofenceConnectedDevice: { id: string; name?: string | null } | null = null;
+
+const clearGeofenceConnectionWatchers = () => {
+  if (geofenceDisconnectSubscription) {
+    try {
+      geofenceDisconnectSubscription.remove();
+    } catch (error) {
+      console.warn(
+        "[Geofencing Task] Failed to remove disconnect listener",
+        error
+      );
+    }
+    geofenceDisconnectSubscription = null;
+  }
+
+  if (geofenceConnectionPoll) {
+    clearInterval(geofenceConnectionPoll);
+    geofenceConnectionPoll = null;
+  }
+
+  geofenceConnectedDevice = null;
+};
+
+const handleBackgroundDisconnect = async (
+  context: "event" | "poll",
+  deviceName?: string | null
+) => {
+  console.log("[Geofencing Task] Background disconnect detected", {
+    context,
+    deviceName,
+  });
+
+  clearGeofenceConnectionWatchers();
+
+  try {
+    const currentState = await getAppState();
+    if (currentState !== "OUTSIDE") {
+      await setAppState("INSIDE_AREA");
+    }
+  } catch (error) {
+    console.error(
+      "[Geofencing Task] Failed to update state after disconnect",
+      error
+    );
+  }
+
+  try {
+    await sendBleDisconnectedNotification(deviceName);
+  } catch (error) {
+    console.error(
+      "[Geofencing Task] Failed to send disconnect notification",
+      error
+    );
+  }
+};
 
 // API通信を行う関数
 const postAttendance = async (
@@ -66,6 +124,8 @@ const tryConnectBleDevice = () => {
   const normalizedNamePrefixes = BLE_DEVICE_NAME_PREFIXES.map((p) =>
     p.toLowerCase()
   );
+
+  clearGeofenceConnectionWatchers();
 
   let settled = false;
   const finish = () => {
@@ -136,6 +196,42 @@ const tryConnectBleDevice = () => {
         "[Geofencing Task] Background connect success:",
         connected.name
       );
+
+      geofenceConnectedDevice = { id: connected.id, name: connected.name };
+
+      geofenceDisconnectSubscription = connected.onDisconnected(
+        async (disconnectError, disconnectedDevice) => {
+          if (disconnectError) {
+            console.warn("[Geofencing Task] Disconnect error", disconnectError);
+          }
+
+          const name = disconnectedDevice?.name ?? connected.name;
+          await handleBackgroundDisconnect("event", name);
+        }
+      );
+
+      geofenceConnectionPoll = setInterval(async () => {
+        if (!geofenceConnectedDevice) {
+          clearGeofenceConnectionWatchers();
+          return;
+        }
+
+        try {
+          const stillConnected = await bleManager.isDeviceConnected(
+            geofenceConnectedDevice.id
+          );
+
+          if (!stillConnected) {
+            await handleBackgroundDisconnect(
+              "poll",
+              geofenceConnectedDevice.name
+            );
+          }
+        } catch (pollError) {
+          console.warn("[Geofencing Task] Connection poll failed", pollError);
+        }
+      }, 20000);
+
       await setAppState("PRESENT");
       await postAttendance(API_URL_ENTER, {
         deviceId: connected.id,
@@ -230,6 +326,19 @@ TaskManager.defineTask(GEOFENCING_TASK_NAME, async ({ data, error }) => {
       "[Geofencing Task] Exited area:",
       region?.identifier ?? "unknown"
     );
+
+    const connectedDevice = geofenceConnectedDevice;
+    clearGeofenceConnectionWatchers();
+    if (connectedDevice) {
+      try {
+        await bleManager.cancelDeviceConnection(connectedDevice.id);
+      } catch (cancelError) {
+        console.warn(
+          "[Geofencing Task] Failed to cancel background connection",
+          cancelError
+        );
+      }
+    }
     await setAppState("OUTSIDE");
 
     // ジオフェンス退出通知を送信

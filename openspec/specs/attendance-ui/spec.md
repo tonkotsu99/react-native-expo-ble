@@ -3,9 +3,7 @@
 ## Purpose
 
 The attendance-ui specification defines the comprehensive user interface for the BLE attendance management application. This specification covers the atomic design system implementation, responsive layouts, theme support, accessibility features, and user interaction patterns for attendance tracking through BLE device connections.
-
 ## Requirements
-
 ### Requirement: Enhanced Atomic Design System
 
 The application SHALL implement a complete atomic design hierarchy with atoms, molecules, organisms, and templates to ensure consistent, reusable, and maintainable UI components.
@@ -209,3 +207,22 @@ UI はクロスプラットフォーム（iOS/Android）で BLE 権限処理と�
 - **WHEN** 画面がレンダリングされる
 - **THEN** 「アプリ情報」という見出しやバージョン情報は表示されてはならない (SHALL NOT)
 - **AND** プライバシーポリシーやサポートへのリンクを含むアプリ情報項目は設定画面に表示されてはならない (SHALL NOT)
+
+### Requirement: Dashboard cards share aligned width
+
+ダッシュボードで横並びに表示される在室ステータスカードと BLE 接続ステータスカードは、常に同じ横幅で揃えなければならない (SHALL)。狭小画面で縦積みに切り替わる場合でも、共有の最小幅を用いて視覚的な段差を生じさせてはならない (SHALL NOT)。
+
+#### Scenario: Horizontal layout keeps cards flush
+
+- **GIVEN** `StatusDashboard` renders with `stackCards = false` and `showConnectionDetails = true`
+- **WHEN** both the 在室ステータスカード and the BLE 接続ステータスカード are displayed side by side
+- **THEN** the two cards SHALL have matching widths so their 左端・右端が一直線に揃う
+- **AND** both cards SHALL respect a shared minimum width token to prevent staggered sizing
+
+#### Scenario: Narrow screens maintain consistent minimum width
+
+- **GIVEN** the viewport is narrower than the minimum side-by-side width
+- **WHEN** the layout wraps or stacks the cards vertically
+- **THEN** each card SHALL continue using the shared minimum width token
+- **AND** no card SHALL shrink below that minimum, avoiding noticeable width jumps when stacking
+
