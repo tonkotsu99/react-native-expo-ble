@@ -149,8 +149,8 @@ export const useBLE = (): UseBLE => {
     if (Platform.OS === "ios") {
       try {
         const state = await bleManager.state();
-        console.log(`iOS Bluetooth状態: ${state}`);
         if (DEBUG_BLE) {
+          console.log(`iOS Bluetooth状態: ${state}`);
           await debug("BLE State (iOS)", String(state));
         }
 

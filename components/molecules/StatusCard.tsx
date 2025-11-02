@@ -9,9 +9,11 @@ import { AppStatusIcon } from "../atoms/StatusIcon";
 const StyledStatusCard = styled(Card, {
   name: "StatusCard",
   padding: "$4",
-  margin: "$2",
+  marginVertical: "$2",
+  marginHorizontal: 0,
   borderRadius: "$6",
   borderWidth: 1,
+  width: "100%",
 
   variants: {
     status: {
@@ -54,15 +56,18 @@ const StyledStatusCard = styled(Card, {
     size: {
       small: {
         padding: "$3",
-        margin: "$1",
+        marginVertical: "$1",
+        marginHorizontal: 0,
       },
       medium: {
         padding: "$4",
-        margin: "$2",
+        marginVertical: "$2",
+        marginHorizontal: 0,
       },
       large: {
         padding: "$5",
-        margin: "$3",
+        marginVertical: "$3",
+        marginHorizontal: 0,
       },
     },
   } as const,

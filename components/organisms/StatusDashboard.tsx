@@ -210,6 +210,7 @@ export const StatusDashboard = React.forwardRef<any, StatusDashboardProps>(
       hasUnreadLogs = false,
     } = dashboardState;
 
+    const CARD_MIN_WIDTH = 320;
     const recommendedAction = getRecommendedAction(
       appState,
       bleConnectionStatus
@@ -307,6 +308,8 @@ export const StatusDashboard = React.forwardRef<any, StatusDashboardProps>(
                 timestamp={appStateTimestamp}
                 onPress={onAppStatePress ? handleAppStatePress : undefined}
                 isInteractive={!!onAppStatePress}
+                width="100%"
+                minWidth={CARD_MIN_WIDTH}
               />
 
               {showConnectionDetails && (
@@ -324,13 +327,15 @@ export const StatusDashboard = React.forwardRef<any, StatusDashboardProps>(
                   onPress={
                     onConnectionPress ? handleConnectionPress : undefined
                   }
+                  width="100%"
+                  minWidth={CARD_MIN_WIDTH}
                 />
               )}
             </YStack>
           ) : (
             // 横並びレイアウト（デフォルト）
             <XStack space="$3" flexWrap="wrap">
-              <YStack flex={1} minWidth={280}>
+              <YStack flexGrow={1} flexBasis="0%" minWidth={CARD_MIN_WIDTH}>
                 <StatusCard
                   status={appState}
                   variant={compactMode ? "default" : "elevated"}
@@ -339,11 +344,12 @@ export const StatusDashboard = React.forwardRef<any, StatusDashboardProps>(
                   timestamp={appStateTimestamp}
                   onPress={onAppStatePress ? handleAppStatePress : undefined}
                   isInteractive={!!onAppStatePress}
+                  width="100%"
                 />
               </YStack>
 
               {showConnectionDetails && (
-                <YStack flex={1} minWidth={280}>
+                <YStack flexGrow={1} flexBasis="0%" minWidth={CARD_MIN_WIDTH}>
                   <ConnectionVisualization
                     status={bleConnectionStatus}
                     deviceInfo={deviceInfo}
@@ -355,6 +361,7 @@ export const StatusDashboard = React.forwardRef<any, StatusDashboardProps>(
                     onDisconnect={onDisconnect}
                     onCopyDeviceId={onCopyDeviceId}
                     isReconnecting={isReconnecting}
+                    width="100%"
                   />
                 </YStack>
               )}

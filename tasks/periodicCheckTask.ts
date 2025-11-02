@@ -7,6 +7,7 @@ import {
   API_URL_ENTER,
   BLE_DEVICE_NAME_PREFIXES,
   BLE_SERVICE_UUIDS,
+  DEBUG_BLE,
 } from "../constants";
 import type { AppState } from "../state/appState";
 import {
@@ -28,7 +29,9 @@ const checkBluetoothPermissions = async (): Promise<boolean> => {
   if (Platform.OS === "ios") {
     try {
       const state = await bleManager.state();
-      console.log(`${LOG_PREFIX} iOS Bluetooth状態: ${state}`);
+      if (DEBUG_BLE) {
+        console.log(`${LOG_PREFIX} iOS Bluetooth状態: ${state}`);
+      }
       return state === State.PoweredOn;
     } catch (error) {
       console.error(`${LOG_PREFIX} iOS Bluetooth状態取得エラー:`, error);

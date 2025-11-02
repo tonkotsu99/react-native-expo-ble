@@ -3,7 +3,9 @@
 ## Purpose
 
 The attendance-ui specification defines the comprehensive user interface for the BLE attendance management application. This specification covers the atomic design system implementation, responsive layouts, theme support, accessibility features, and user interaction patterns for attendance tracking through BLE device connections.
+
 ## Requirements
+
 ### Requirement: Enhanced Atomic Design System
 
 The application SHALL implement a complete atomic design hierarchy with atoms, molecules, organisms, and templates to ensure consistent, reusable, and maintainable UI components.
@@ -178,6 +180,13 @@ UI はクロスプラットフォーム（iOS/Android）で BLE 権限処理と�
 - **GIVEN** BLE デバイスが接続済みである
 - **THEN** ダッシュボードは接続状態とデバイス名をヘッダーまたはカード内に表示しなければならない (SHALL)
 
+#### Scenario: Align dashboard status cards
+
+- **GIVEN** the dashboard renders the presence status card and the BLE connection card side by side
+- **WHEN** the viewport is wide enough to support multiple columns
+- **THEN** both cards SHALL share an equal width and align with the dashboard spacing tokens
+- **AND** on narrow layouts the cards SHALL stack vertically while maintaining full-width sizing
+
 #### Scenario: Require user identifier before dashboard actions
 
 - **GIVEN** ユーザー ID が永続ストアに設定されていない
@@ -200,4 +209,3 @@ UI はクロスプラットフォーム（iOS/Android）で BLE 権限処理と�
 - **WHEN** 画面がレンダリングされる
 - **THEN** 「アプリ情報」という見出しやバージョン情報は表示されてはならない (SHALL NOT)
 - **AND** プライバシーポリシーやサポートへのリンクを含むアプリ情報項目は設定画面に表示されてはならない (SHALL NOT)
-
