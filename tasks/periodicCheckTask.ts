@@ -13,6 +13,7 @@ import type { AppState } from "../state/appState";
 import {
   getAppState,
   getInsideAreaReportStatus,
+  getRapidRetryWindowUntil,
   setAppState,
   setInsideAreaReportStatus,
 } from "../state/appState";
@@ -20,6 +21,8 @@ import { getUserId } from "../state/userProfile";
 import { postInsideAreaStatus } from "./insideAreaStatus";
 
 const SCAN_TIMEOUT_MS = 15000;
+const RETRY_INTERVAL_MS = 2 * 60 * 1000; // 2 minutes backoff for repeated retries
+let lastRetryTimestamp = 0;
 const LOG_PREFIX = "[Periodic Check]";
 
 /**
@@ -76,6 +79,12 @@ const postEnterAttendance = async (device: Device): Promise<void> => {
 };
 
 const scanAndReconnect = async (previousState: AppState): Promise<boolean> => {
+  const userId = await getUserId();
+  if (!userId) {
+    console.warn(`${LOG_PREFIX} Skipping BLE scan: missing userId`);
+    return false;
+  }
+
   // 権限チェック
   const hasPermissions = await checkBluetoothPermissions();
   if (!hasPermissions) {
@@ -169,6 +178,10 @@ const scanAndReconnect = async (previousState: AppState): Promise<boolean> => {
 const periodicTask = async (taskId: string) => {
   console.log("[BackgroundFetch] taskId:", taskId);
   const previousState = await getAppState();
+  const rapidRetryWindowUntil = await getRapidRetryWindowUntil();
+  const now = Date.now();
+  const rapidRetryWindowActive =
+    typeof rapidRetryWindowUntil === "number" && now < rapidRetryWindowUntil;
   const connectedDevices = await bleManager.connectedDevices(BLE_SERVICE_UUIDS);
 
   if (connectedDevices.length > 0) {
@@ -207,11 +220,32 @@ const periodicTask = async (taskId: string) => {
         }
       }
     }
-    console.log(`${LOG_PREFIX} Not connected. Starting scan...`);
-    const connected = await scanAndReconnect(previousState);
-    if (!connected) {
+    const shouldRetryNow =
+      previousState !== "INSIDE_AREA" ||
+      now - lastRetryTimestamp >= RETRY_INTERVAL_MS;
+
+    if (shouldRetryNow) {
+      if (rapidRetryWindowActive) {
+        console.log(
+          `${LOG_PREFIX} Rapid retry window active until ${new Date(
+            rapidRetryWindowUntil!
+          ).toISOString()}. Skipping periodic scan.`
+        );
+      } else {
+        console.log(`${LOG_PREFIX} Not connected. Starting scan...`);
+        lastRetryTimestamp = now;
+        const connected = await scanAndReconnect(previousState);
+        if (!connected) {
+          console.log(
+            `${LOG_PREFIX} Device not found. Will retry after backoff.`
+          );
+        }
+      }
+    } else {
       console.log(
-        `${LOG_PREFIX} Device not found. Will retry on next interval.`
+        `${LOG_PREFIX} Retry deferred to avoid frequent scans (elapsed ${
+          now - lastRetryTimestamp
+        }ms)`
       );
     }
   } else {

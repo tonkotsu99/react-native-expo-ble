@@ -332,6 +332,14 @@ export const useBLE = (): UseBLE => {
   };
 
   const startScan = async (): Promise<void> => {
+    const userId = await getUserId();
+    if (!userId) {
+      const message = "[BLE] Cannot start scan: missing userId";
+      console.warn(message);
+      if (DEBUG_BLE) await debug("Scan Skipped", "missing userId");
+      throw new Error(message);
+    }
+
     // First, adopt any existing connection established by background tasks
     try {
       const already = await bleManager.connectedDevices(BLE_SERVICE_UUIDS);

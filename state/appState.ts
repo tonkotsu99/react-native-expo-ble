@@ -5,6 +5,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 export type AppState = "OUTSIDE" | "INSIDE_AREA" | "PRESENT" | "UNCONFIRMED";
 const STATE_KEY = "app_state";
 const INSIDE_AREA_REPORTED_KEY = "inside_area_reported";
+const RAPID_RETRY_UNTIL_KEY = "rapid_retry_until";
 
 // Simple in-memory subscription for app state changes
 type AppStateListener = (state: AppState) => void;
@@ -32,6 +33,26 @@ export const setInsideAreaReportStatus = async (
   );
 };
 
+/** 高速再試行ウィンドウの終了時刻 (epoch ms) を取得する */
+export const getRapidRetryWindowUntil = async (): Promise<number | null> => {
+  const value = await AsyncStorage.getItem(RAPID_RETRY_UNTIL_KEY);
+  if (!value) return null;
+  const parsed = Number(value);
+  if (Number.isNaN(parsed)) return null;
+  return parsed;
+};
+
+/** 高速再試行ウィンドウの終了時刻 (epoch ms) を保存する */
+export const setRapidRetryWindowUntil = async (
+  timestamp: number | null
+): Promise<void> => {
+  if (!timestamp) {
+    await AsyncStorage.removeItem(RAPID_RETRY_UNTIL_KEY);
+    return;
+  }
+  await AsyncStorage.setItem(RAPID_RETRY_UNTIL_KEY, String(timestamp));
+};
+
 /** 現在のアプリ状態を取得する */
 export const getAppState = async (): Promise<AppState> => {
   const state = await AsyncStorage.getItem(STATE_KEY);
@@ -46,6 +67,12 @@ export const setAppState = async (state: AppState): Promise<void> => {
 
   if (state !== "INSIDE_AREA" && previousState === "INSIDE_AREA") {
     await setInsideAreaReportStatus(false);
+  }
+
+  if (previousState === "PRESENT" && state === "INSIDE_AREA") {
+    console.log(
+      "[AppState] Transitioned from PRESENT to INSIDE_AREA; BLE reconnect pending"
+    );
   }
 
   // Notify subscribers (fire-and-forget)
