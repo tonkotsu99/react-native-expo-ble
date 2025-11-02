@@ -21,26 +21,10 @@ export const postInsideAreaStatus = async (
       return false;
     }
 
-    const payload: Record<string, unknown> = {
-      userId,
-      status: "INSIDE_AREA",
-      timestamp: new Date().toISOString(),
-      source: metadata.source,
-      regionIdentifier: metadata.regionIdentifier ?? null,
-    };
-
-    if (metadata.latitude != null && metadata.longitude != null) {
-      payload.location = {
-        latitude: metadata.latitude,
-        longitude: metadata.longitude,
-        radius: metadata.radius ?? null,
-      };
-    }
-
     const response = await fetch(API_URL_INSIDE_AREA, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
+      body: JSON.stringify({ userId }),
     });
 
     if (!response.ok) {
