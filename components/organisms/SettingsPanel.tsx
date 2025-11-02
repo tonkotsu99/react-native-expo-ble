@@ -1,10 +1,4 @@
-import {
-  ChevronRight,
-  ExternalLink,
-  Info,
-  Shield,
-  User,
-} from "@tamagui/lucide-icons";
+import { ChevronRight, User } from "@tamagui/lucide-icons";
 import React from "react";
 import type { YStackProps } from "tamagui";
 import { H3, H4, Input, styled, Switch, XStack, YStack } from "tamagui";
@@ -151,7 +145,6 @@ export type SettingsPanelProps = YStackProps & {
     notifications?: boolean;
     behavior?: boolean;
     data?: boolean;
-    about?: boolean;
   };
 
   // カスタム設定項目
@@ -163,19 +156,12 @@ export type SettingsPanelProps = YStackProps & {
   onClearData?: () => void;
   onExportData?: () => void;
   onResetSettings?: () => void;
-  onOpenPrivacyPolicy?: () => void;
-  onOpenLicenses?: () => void;
-  onContactSupport?: () => void;
 
   // UserID関連
   onUserIdSave?: (userId: string) => Promise<void>;
   onUserIdModalOpen?: () => void;
   userIdLoading?: boolean;
   userIdSaving?: boolean;
-
-  // アプリ情報
-  appVersion?: string;
-  appBuild?: string;
 
   accessibilityLabel?: string;
 };
@@ -195,7 +181,6 @@ export const SettingsPanel = React.forwardRef<any, SettingsPanelProps>(
         notifications: true,
         behavior: true,
         data: true,
-        about: true,
       },
       customItems = [],
       accessibilityLabel,
@@ -210,7 +195,7 @@ export const SettingsPanel = React.forwardRef<any, SettingsPanelProps>(
           type: "info",
           title: "userId",
           description: settings.userId
-            ? ``
+            ? ""
             : "未設定 - BLE操作には設定が必要です",
           icon: User,
           value: settings.userId || "未設定",
@@ -222,42 +207,6 @@ export const SettingsPanel = React.forwardRef<any, SettingsPanelProps>(
           description: "モーダルで詳細に編集",
           disabled: restProps.userIdLoading || restProps.userIdSaving,
           onPress: restProps.onUserIdModalOpen,
-        },
-      ],
-      about: [
-        ...(restProps.appVersion
-          ? [
-              {
-                id: "version",
-                type: "info" as const,
-                title: "バージョン",
-                value: `${restProps.appVersion}${
-                  restProps.appBuild ? ` (${restProps.appBuild})` : ""
-                }`,
-                icon: Info,
-              },
-            ]
-          : []),
-        {
-          id: "privacy",
-          type: "link",
-          title: "プライバシーポリシー",
-          icon: Shield,
-          onPress: restProps.onOpenPrivacyPolicy,
-        },
-        {
-          id: "licenses",
-          type: "link",
-          title: "ライセンス情報",
-          icon: ExternalLink,
-          onPress: restProps.onOpenLicenses,
-        },
-        {
-          id: "support",
-          type: "link",
-          title: "サポートに連絡",
-          icon: ExternalLink,
-          onPress: restProps.onContactSupport,
         },
       ],
     };
@@ -401,16 +350,6 @@ export const SettingsPanel = React.forwardRef<any, SettingsPanelProps>(
             {(customItems || []).map(renderSettingItem)}
           </SettingsSection>
         )}
-
-        {/* アプリ情報 */}
-        {sections.about && (
-          <SettingsSection borderBottomWidth={0}>
-            <H4 fontSize="$4" fontWeight="600" color="$color" marginBottom="$2">
-              アプリ情報
-            </H4>
-            {(defaultSections.about || []).map(renderSettingItem)}
-          </SettingsSection>
-        )}
       </StyledSettingsPanel>
     );
   }
@@ -433,7 +372,6 @@ export const CompactSettingsPanel = React.forwardRef<
       notifications: false,
       behavior: true,
       data: false,
-      about: false,
     }}
     {...props}
   />
@@ -460,7 +398,6 @@ export const EssentialSettingsPanel = React.forwardRef<
       notifications: true,
       behavior: false,
       data: false,
-      about: false,
     }}
     {...props}
   />

@@ -4,28 +4,31 @@
 
 ### Requirement: Provide thin templates per tab
 
-- Provide templates that preconfigure `EnhancedMainTemplate` for each tab while narrowing the prop surface.
+各タブ向けに `EnhancedMainTemplate` を薄くラップするテンプレートを提供し、必要なプロップのみを公開しなければならない (SHALL)。
 
 #### Scenario: DashboardTemplate sets active tab and props
 
-- Given `DashboardTemplate` is used,
-- Then it must set `activeTab` to `dashboard`,
-- And accept only dashboard-relevant props,
-- And render via `EnhancedMainTemplate`.
+- **GIVEN** `DashboardTemplate` is used
+- **WHEN** a dashboard screen renders through the template
+- **THEN** it SHALL set `activeTab` to `dashboard`
+- **AND** it SHALL accept only dashboard-relevant props
+- **AND** it SHALL render via `EnhancedMainTemplate`
 
 #### Scenario: ConnectionTemplate sets active tab and props
 
-- Given `ConnectionTemplate` is used,
-- Then it must set `activeTab` to `connection`,
-- And accept only connection-relevant props including scan/connect handlers,
-- And render via `EnhancedMainTemplate`.
+- **GIVEN** `ConnectionTemplate` is used
+- **WHEN** connection UI renders through the template
+- **THEN** it SHALL set `activeTab` to `connection`
+- **AND** it SHALL accept only connection-relevant props including scan/connect handlers
+- **AND** it SHALL render via `EnhancedMainTemplate`
 
 #### Scenario: SettingsTemplate sets active tab and props
 
-- Given `SettingsTemplate` is used,
-- Then it must set `activeTab` to `settings`,
-- And accept settings-related props including user ID handlers and custom settings items,
-- And render via `EnhancedMainTemplate`.
+- **GIVEN** `SettingsTemplate` is used
+- **WHEN** settings UI renders through the template
+- **THEN** it SHALL set `activeTab` to `settings`
+- **AND** it SHALL accept settings-related props including user ID handlers and custom settings items
+- **AND** it SHALL render via `EnhancedMainTemplate`
 
 ## VALIDATION
 

@@ -58,7 +58,6 @@ export function SettingsTemplate(props: SettingsTemplateProps) {
               notifications: true,
               behavior: true,
               data: true,
-              about: true,
               userId: true,
             }}
             variant="default"

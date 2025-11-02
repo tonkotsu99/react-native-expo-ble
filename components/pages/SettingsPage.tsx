@@ -182,8 +182,6 @@ export default function SettingsPage() {
     }));
   }, [colorScheme, userId]);
 
-  // テーマ変更UIは撤去
-
   const handleSettingChange = useCallback(
     (key: keyof SettingsValues, value: any) => {
       setSettings((prev) => ({ ...prev, [key]: value }));
