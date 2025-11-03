@@ -80,7 +80,8 @@
           "isIosBackgroundLocationEnabled": true,
           "isAndroidBackgroundLocationEnabled": true
         }
-      ]
+      ],
+      "./plugins/withTransistorsoftBackgroundFetch"
     ],
     "experiments": {
       "typedRoutes": true,
