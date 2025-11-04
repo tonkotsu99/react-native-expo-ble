@@ -1,8 +1,8 @@
 import { Platform } from "react-native";
 import BackgroundFetch from "react-native-background-fetch";
 import type { Device } from "react-native-ble-plx";
-import { State } from "react-native-ble-plx";
 import { bleManager } from "../bluetooth/bleManagerInstance";
+import { waitForBlePoweredOn } from "../bluetooth/bleStateUtils";
 import {
   API_URL_ENTER,
   BLE_DEVICE_NAME_PREFIXES,
@@ -30,16 +30,27 @@ const LOG_PREFIX = "[Periodic Check]";
  */
 const checkBluetoothPermissions = async (): Promise<boolean> => {
   if (Platform.OS === "ios") {
-    try {
-      const state = await bleManager.state();
-      if (DEBUG_BLE) {
-        console.log(`${LOG_PREFIX} iOS Bluetooth状態: ${state}`);
-      }
-      return state === State.PoweredOn;
-    } catch (error) {
-      console.error(`${LOG_PREFIX} iOS Bluetooth状態取得エラー:`, error);
+    const waitResult = await waitForBlePoweredOn({
+      timeoutMs: 15000,
+      logPrefix: LOG_PREFIX,
+    });
+
+    if (!waitResult.ready) {
+      console.warn(`${LOG_PREFIX} iOS Bluetooth not ready for scan`, {
+        waitResult,
+      });
       return false;
     }
+
+    if (DEBUG_BLE) {
+      console.log(`${LOG_PREFIX} iOS Bluetooth ready`, {
+        initialState: waitResult.initialState ?? "unknown",
+        finalState: waitResult.finalState ?? "unknown",
+        durationMs: waitResult.durationMs,
+      });
+    }
+
+    return true;
   }
 
   // Androidの場合は従来通り（権限はアプリ起動時に取得済み）
@@ -113,7 +124,7 @@ const scanAndReconnect = async (previousState: AppState): Promise<boolean> => {
     }, SCAN_TIMEOUT_MS);
 
     // Broad scan + JS filters for iOS reliability
-    bleManager.startDeviceScan(null, null, (error, device) => {
+    bleManager.startDeviceScan(BLE_SERVICE_UUIDS, null, (error, device) => {
       if (error) {
         console.error(`${LOG_PREFIX} Scan error:`, error);
         finish(false);

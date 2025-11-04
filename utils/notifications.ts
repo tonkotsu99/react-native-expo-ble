@@ -175,7 +175,5 @@ export async function sendDebugNotification(
   title: string,
   body: string
 ): Promise<void> {
-  // 本番でのスパムを避けたい場合は __DEV__ ガードをかける
-  // ただし実運用の一時的な診断にも使えるよう、ガードは呼び出し側で制御可能にする
   await scheduleNotification(`[DEBUG] ${title}`, body);
 }
