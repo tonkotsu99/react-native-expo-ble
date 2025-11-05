@@ -1,0 +1,10 @@
+- [x] 計測: Android 背景処理のログ収集用に `logAndroidBackgroundState` と `notifyDebug` を追加し、ジオフェンス／定期タスク双方から `BackgroundFetch.status()` と `sendDebugNotification` を送出できるようにした。
+- [x] プラットフォーム対策: Android 用フォアグラウンド通知 (`utils/androidForegroundService.ts`)、`autoConnect` 指定、Battery Optimization 設定誘導 (`ensureAndroidBackgroundCapabilities`) を実装し、背景タスクから呼び出すよう接続フローを更新した。
+- [x] ジオフェンス処理: `tasks/geofencingTask.ts` を改修し、Android ではフォアグラウンド通知を起動してスキャン → 接続 → 通知 →Rapid Retry を実行、退出時に通知停止／状態ログを記録するようにした。
+- [x] 定期チェック: `tasks/periodicCheckTask.ts` のスキャン手順を Android 対応に再構成し、Foreground 通知・`autoConnect`・Doze 状態監視・バックオフロギングを追加した。
+- [x] 権限・通知: `ensureAndroidBackgroundCapabilities` で `POST_NOTIFICATIONS` 取得とバッテリー最適化設定誘導を行い、`app.json` に `POST_NOTIFICATIONS` を追加した。
+- [x] 検証: `npm run lint` を実行済み。本タスクに Android 実機検証の依頼手順（下記）を追記し、現地確認を依頼するメモとして共有する。
+  - Dev Client でビルドしたアプリを起動し、初回起動時に通知権限とバッテリー最適化解除ダイアログが表示されることを確認する。
+  - アプリをバックグラウンド/スリープにして九工大ジオフェンスへ入退場し、Foreground Service 通知が常駐しつつ在室 API が送信されるかログで確認する。
+  - Rapid Retry 発火時に 5 分間の再スキャンが実施され、ログ/通知で失敗理由が確認できることをテストする。
+  - 退出後にフォアグラウンド通知が停止し、退室 API が呼ばれ Rapid Retry ウィンドウがリセットされることを確認する。

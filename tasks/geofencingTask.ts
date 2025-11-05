@@ -3,6 +3,7 @@ import {
   type LocationRegion,
 } from "expo-location";
 import * as TaskManager from "expo-task-manager";
+import { Platform } from "react-native";
 import BackgroundFetch from "react-native-background-fetch";
 import { bleManager } from "../bluetooth/bleManagerInstance";
 import { waitForBlePoweredOn } from "../bluetooth/bleStateUtils";
@@ -20,6 +21,13 @@ import {
   setRapidRetryWindowUntil,
 } from "../state/appState";
 import { getUserId } from "../state/userProfile";
+import {
+  ensureAndroidBackgroundCapabilities,
+  logAndroidBackgroundState,
+  notifyAndroidDebug,
+  startAndroidBleForegroundService,
+  stopAndroidBleForegroundService,
+} from "../utils/androidBackground";
 import {
   sendBleConnectedNotification,
   sendBleDisconnectedNotification,
@@ -102,6 +110,9 @@ const stopRapidRetryWindow = async (
 
   if (!options.silent) {
     console.log("[Geofencing Task] Rapid retry window stopped", { reason });
+    if (Platform.OS === "android") {
+      void notifyAndroidDebug("Rapid retry window stopped", `reason=${reason}`);
+    }
   }
 
   try {
@@ -122,6 +133,16 @@ const handleBackgroundDisconnect = async (
     context,
     deviceName,
   });
+
+  await logAndroidBackgroundState(`disconnect:${context}`, {
+    deviceName: deviceName ?? null,
+  });
+  if (Platform.OS === "android") {
+    await notifyAndroidDebug(
+      "BLE disconnected",
+      `context=${context}; device=${deviceName ?? "unknown"}`
+    );
+  }
 
   clearGeofenceConnectionWatchers();
   setTimeout(() => {
@@ -208,6 +229,62 @@ async function tryConnectBleDevice(
 
   clearGeofenceConnectionWatchers();
 
+  let androidForegroundStarted = false;
+  const androidReason = `tryConnect:${context}`;
+
+  const stopAndroidForeground = async (phase: string) => {
+    if (!androidForegroundStarted) {
+      return;
+    }
+    androidForegroundStarted = false;
+    try {
+      await stopAndroidBleForegroundService(`${androidReason}:${phase}`);
+    } catch (error) {
+      console.warn(
+        "[Geofencing Task] Failed to stop Android foreground service",
+        {
+          error,
+          phase,
+          context,
+        }
+      );
+    }
+  };
+
+  if (Platform.OS === "android") {
+    try {
+      const capabilities = await ensureAndroidBackgroundCapabilities({
+        interactive: false,
+        reason: androidReason,
+      });
+      await logAndroidBackgroundState(androidReason, {
+        notificationsGranted: capabilities.notificationsGranted,
+        batteryOptimizationOk: capabilities.batteryOptimizationOk,
+        backgroundFetchStatus: capabilities.backgroundFetchStatus ?? null,
+      });
+
+      const canStartForeground =
+        capabilities.notificationsGranted && capabilities.batteryOptimizationOk;
+      if (canStartForeground) {
+        await startAndroidBleForegroundService(androidReason, {
+          title: "研究室ビーコンを探索しています",
+          body: "在室状況を確認するためにバックグラウンドでBLEを監視しています",
+        });
+        androidForegroundStarted = true;
+      } else {
+        await notifyAndroidDebug(
+          "Foreground service unavailable",
+          `context=${context}; notificationsGranted=${capabilities.notificationsGranted}; batteryOptimizationOk=${capabilities.batteryOptimizationOk}`
+        );
+      }
+    } catch (error) {
+      console.warn(
+        "[Geofencing Task] Failed to prepare Android foreground capabilities",
+        error
+      );
+    }
+  }
+
   const userId = await getUserId();
   if (!userId) {
     console.warn(
@@ -217,6 +294,7 @@ async function tryConnectBleDevice(
       "BLE Entry Skipped",
       "Missing userId; aborting background connect"
     );
+    await stopAndroidForeground("missing-user-id");
     return false;
   }
 
@@ -228,6 +306,7 @@ async function tryConnectBleDevice(
       "BLE Entry Skipped",
       "Background scan already in flight"
     );
+    await stopAndroidForeground("scan-in-flight");
     return false;
   }
 
@@ -248,6 +327,7 @@ async function tryConnectBleDevice(
       "BLE Entry Blocked",
       `context=${context}; ready=${waitResult.ready}; initialState=${waitResult.initialState}; finalState=${waitResult.finalState}; timedOut=${waitResult.timedOut}`
     );
+    await stopAndroidForeground("ble-not-ready");
     return false;
   }
 
@@ -283,12 +363,21 @@ async function tryConnectBleDevice(
         `context=${context}; reason=${reason}; durationMs=${durationMs}`
       );
 
+      if (Platform.OS === "android") {
+        void logAndroidBackgroundState(`${androidReason}:finish`, {
+          result,
+          reason,
+        });
+        void stopAndroidForeground(result ? "success" : reason);
+      }
+
       resolve(result);
     };
 
     const timeoutMs = 15000;
     const timeoutId = setTimeout(() => {
       console.warn("[Geofencing Task] Scan timeout");
+      void stopAndroidForeground("timeout");
       finish(false, "timeout");
     }, timeoutMs);
 
@@ -312,6 +401,7 @@ async function tryConnectBleDevice(
             console.error("[Geofencing Task] Scan Error:", scanError);
             clearTimeout(timeoutId);
             stopScan();
+            void stopAndroidForeground("scan-error");
             finish(false, "scan-error", {
               error: (scanError as Error).message,
             });
@@ -352,6 +442,7 @@ async function tryConnectBleDevice(
                 BLE_SERVICE_UUIDS
               );
               if (connectedDevices.length > 0) {
+                void stopAndroidForeground("already-connected");
                 finish(true, "already-connected", {
                   connectedCount: connectedDevices.length,
                 });
@@ -366,7 +457,14 @@ async function tryConnectBleDevice(
               matchesService,
               matchesName,
             });
-            const connected = await device.connect();
+            const connectionOptions =
+              Platform.OS === "android"
+                ? { autoConnect: true as const, timeout: 15000 }
+                : { timeout: 15000 };
+            const connected = await bleManager.connectToDevice(
+              device.id,
+              connectionOptions
+            );
             await connected.discoverAllServicesAndCharacteristics();
             console.log(
               "[Geofencing Task] Background connect success:",
@@ -423,6 +521,14 @@ async function tryConnectBleDevice(
               deviceName: connected.name,
             });
             await sendBleConnectedNotification(connected.name);
+            if (Platform.OS === "android") {
+              await notifyAndroidDebug(
+                "BLE connect success",
+                `context=${context}; id=${connected.id}; name=${
+                  connected.name ?? "(unknown)"
+                }`
+              );
+            }
             await stopRapidRetryWindow("connected");
             finish(true, "connected", {
               deviceId: connected.id,
@@ -433,6 +539,14 @@ async function tryConnectBleDevice(
               "[Geofencing Task] Background connect error:",
               connectError
             );
+            if (Platform.OS === "android") {
+              await notifyAndroidDebug(
+                "BLE connect error",
+                `context=${context}; message=${String(
+                  (connectError as Error).message ?? connectError
+                )}`
+              );
+            }
             finish(false, "connect-error", {
               error: (connectError as Error).message,
             });
@@ -443,6 +557,7 @@ async function tryConnectBleDevice(
       backgroundScanInFlight = false;
       clearTimeout(timeoutId);
       console.error("[Geofencing Task] Failed to start device scan", error);
+      void stopAndroidForeground("start-scan-error");
       finish(false, "start-scan-error", {
         error: (error as Error).message,
       });
@@ -486,6 +601,14 @@ async function startRapidRetryWindow(
       windowEndsAtIso: new Date(rapidRetryWindowEndsAt).toISOString(),
       timestamp: new Date().toISOString(),
     });
+    if (Platform.OS === "android") {
+      void notifyAndroidDebug(
+        "Rapid retry",
+        `force=${force}; windowEndsAt=${new Date(
+          rapidRetryWindowEndsAt
+        ).toISOString()}`
+      );
+    }
     void tryConnectBleDevice({ force, context: "rapid-retry" });
   };
 
@@ -501,6 +624,12 @@ async function startRapidRetryWindow(
     intervalMs: RAPID_RETRY_INTERVAL_MS,
     force,
   });
+  if (Platform.OS === "android") {
+    void notifyAndroidDebug(
+      "Rapid retry window started",
+      `intervalMs=${RAPID_RETRY_INTERVAL_MS}; windowMs=${RAPID_RETRY_WINDOW_MS}; force=${force}`
+    );
+  }
 }
 
 /**
@@ -544,6 +673,9 @@ TaskManager.defineTask(GEOFENCING_TASK_NAME, async ({ data, error }) => {
 
     // ジオフェンス入場通知を送信
     await sendGeofenceEnterNotification();
+    await logAndroidBackgroundState("geofence-enter", {
+      previousState,
+    });
 
     const alreadyReported = await getInsideAreaReportStatus();
     if (previousState === "INSIDE_AREA" && alreadyReported) {
@@ -577,6 +709,9 @@ TaskManager.defineTask(GEOFENCING_TASK_NAME, async ({ data, error }) => {
         await BackgroundFetch.start();
         backgroundFetchStarted = true;
         console.log("[Geofencing Task] BackgroundFetch started");
+        await logAndroidBackgroundState("background-fetch-start", {
+          reason: "geofence-enter",
+        });
       } catch (e) {
         console.error("[Geofencing Task] BackgroundFetch start failed", e);
       }
@@ -584,6 +719,9 @@ TaskManager.defineTask(GEOFENCING_TASK_NAME, async ({ data, error }) => {
       console.log(
         "[Geofencing Task] BackgroundFetch already started. Skipping start."
       );
+      await logAndroidBackgroundState("background-fetch-start", {
+        reason: "geofence-enter-skip",
+      });
     }
 
     const connected = await tryConnectBleDevice({
@@ -618,6 +756,9 @@ TaskManager.defineTask(GEOFENCING_TASK_NAME, async ({ data, error }) => {
       }
     }
     await setAppState("OUTSIDE");
+    await logAndroidBackgroundState("geofence-exit", {
+      connectedDeviceId: connectedDevice?.id ?? null,
+    });
 
     // ジオフェンス退出通知を送信
     await sendGeofenceExitNotification();
@@ -633,8 +774,15 @@ TaskManager.defineTask(GEOFENCING_TASK_NAME, async ({ data, error }) => {
       await BackgroundFetch.stop(); // 定期タスクを停止
       backgroundFetchStarted = false;
       console.log("[Geofencing Task] BackgroundFetch stopped");
+      await logAndroidBackgroundState("background-fetch-stop", {
+        reason: "geofence-exit",
+      });
     } catch (e) {
       console.error("[Geofencing Task] BackgroundFetch stop failed", e);
+    }
+
+    if (Platform.OS === "android") {
+      await stopAndroidBleForegroundService("geofence-exit");
     }
   }
 });

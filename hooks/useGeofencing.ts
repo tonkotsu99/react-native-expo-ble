@@ -1,5 +1,7 @@
+import { ensureAndroidBackgroundCapabilities } from "@/utils/androidBackground";
 import * as Location from "expo-location";
 import { useEffect } from "react";
+import { Platform } from "react-native";
 import "../tasks/geofencingTask"; // タスク定義ファイルをインポートして登録
 
 const GEOFENCING_TASK_NAME = "background-geofencing-task";
@@ -54,6 +56,12 @@ export const useGeofencing = () => {
     const setupGeofencing = async () => {
       const hasPermissions = await requestPermissions();
       if (hasPermissions) {
+        if (Platform.OS === "android") {
+          await ensureAndroidBackgroundCapabilities({
+            interactive: true,
+            reason: "geofencing-startup",
+          });
+        }
         await startGeofencing();
       } else {
         console.error(

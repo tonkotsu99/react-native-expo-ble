@@ -1,0 +1,415 @@
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import Constants from "expo-constants";
+import * as Notifications from "expo-notifications";
+import { Linking, Platform } from "react-native";
+import BackgroundFetch from "react-native-background-fetch";
+import { DEBUG_BLE } from "../constants";
+import { sendDebugNotification } from "./notifications";
+
+type IntentLauncherModule = typeof import("expo-intent-launcher");
+
+let cachedIntentLauncher: IntentLauncherModule | null | undefined;
+
+const loadIntentLauncher = async (): Promise<IntentLauncherModule | null> => {
+  if (cachedIntentLauncher !== undefined) {
+    return cachedIntentLauncher;
+  }
+
+  try {
+    const module = await import("expo-intent-launcher");
+    cachedIntentLauncher = module;
+    return module;
+  } catch (error) {
+    console.warn("[AndroidBackground] expo-intent-launcher unavailable", {
+      error,
+    });
+    cachedIntentLauncher = null;
+    return null;
+  }
+};
+
+const FOREGROUND_CHANNEL_ID = "ble-background-maintenance";
+const BATTERY_PROMPT_KEY = "android_battery_prompt_v1";
+const NOTIFICATION_PROMPT_KEY = "android_post_notifications_prompt_v1";
+
+let foregroundNotificationId: string | null = null;
+let foregroundActiveReason: string | null = null;
+
+const getAndroidSdkVersion = (): number => {
+  if (typeof Platform.Version === "number") {
+    return Platform.Version;
+  }
+  const parsed = parseInt(String(Platform.Version), 10);
+  return Number.isFinite(parsed) ? parsed : 0;
+};
+
+const backgroundFetchStatusLabel = (status: number): string => {
+  switch (status) {
+    case BackgroundFetch.STATUS_AVAILABLE:
+      return "AVAILABLE";
+    case BackgroundFetch.STATUS_DENIED:
+      return "DENIED";
+    case BackgroundFetch.STATUS_RESTRICTED:
+      return "RESTRICTED";
+    default:
+      return `UNKNOWN(${status})`;
+  }
+};
+
+const ensureForegroundChannelAsync = async (): Promise<void> => {
+  if (Platform.OS !== "android") return;
+
+  try {
+    const channel = await Notifications.getNotificationChannelAsync(
+      FOREGROUND_CHANNEL_ID
+    );
+
+    if (channel) {
+      return;
+    }
+
+    await Notifications.setNotificationChannelAsync(FOREGROUND_CHANNEL_ID, {
+      name: "在室監視サービス",
+      importance: Notifications.AndroidImportance.MAX,
+      lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
+      sound: undefined,
+      vibrationPattern: [0],
+      enableLights: false,
+      enableVibrate: false,
+      showBadge: false,
+    });
+  } catch (error) {
+    console.warn("[AndroidBackground] Failed to ensure notification channel", {
+      error,
+    });
+  }
+};
+
+const cancelForegroundNotificationAsync = async (
+  reason: string
+): Promise<void> => {
+  if (Platform.OS !== "android") {
+    return;
+  }
+
+  try {
+    if (foregroundNotificationId) {
+      await Notifications.cancelScheduledNotificationAsync(
+        foregroundNotificationId
+      );
+      await Notifications.dismissNotificationAsync(foregroundNotificationId);
+    }
+  } catch (error) {
+    console.warn(
+      "[AndroidBackground] Failed to cancel foreground notification",
+      {
+        error,
+        reason,
+      }
+    );
+  } finally {
+    foregroundNotificationId = null;
+    foregroundActiveReason = null;
+  }
+};
+
+export const notifyAndroidDebug = async (
+  title: string,
+  body: string
+): Promise<void> => {
+  const prepared = `[Android BG] ${title}`;
+  console.log(`${prepared}: ${body}`);
+  if (!DEBUG_BLE) {
+    return;
+  }
+  try {
+    await sendDebugNotification(prepared, body);
+  } catch (error) {
+    console.warn("[AndroidBackground] Failed to send debug notification", {
+      error,
+      title,
+    });
+  }
+};
+
+export const logAndroidBackgroundState = async (
+  context: string,
+  extra: Record<string, unknown> = {}
+): Promise<void> => {
+  if (Platform.OS !== "android") {
+    return;
+  }
+
+  try {
+    const status = await BackgroundFetch.status();
+    const message = {
+      status: backgroundFetchStatusLabel(status),
+      foregroundActive: Boolean(foregroundNotificationId),
+      foregroundReason: foregroundActiveReason,
+      ...extra,
+    };
+    console.log(`[AndroidBackground] ${context}`, message);
+    if (DEBUG_BLE) {
+      await notifyAndroidDebug(`State: ${context}`, JSON.stringify(message));
+    }
+  } catch (error) {
+    console.warn("[AndroidBackground] Failed to log background state", {
+      context,
+      error,
+      extra,
+    });
+  }
+};
+
+type ForegroundContent = {
+  title?: string;
+  body?: string;
+};
+
+export const startAndroidBleForegroundService = async (
+  reason: string,
+  content: ForegroundContent = {}
+): Promise<void> => {
+  if (Platform.OS !== "android") {
+    return;
+  }
+
+  await ensureForegroundChannelAsync();
+
+  const title = content.title ?? "研究室ビーコンの接続を監視しています";
+  const body =
+    content.body ??
+    "在室状況を自動で更新するため、バックグラウンドでBluetoothデバイスを探索しています";
+
+  try {
+    if (foregroundNotificationId) {
+      await cancelForegroundNotificationAsync("restart");
+    }
+
+    const trigger = { channelId: FOREGROUND_CHANNEL_ID } as const;
+
+    foregroundNotificationId = await Notifications.scheduleNotificationAsync({
+      content: {
+        title,
+        body,
+        sticky: true,
+        color: "#0A84FF",
+        autoDismiss: false,
+        sound: false,
+      },
+      trigger,
+    });
+    foregroundActiveReason = reason;
+    await notifyAndroidDebug("Foreground service started", `reason=${reason}`);
+  } catch (error) {
+    foregroundNotificationId = null;
+    foregroundActiveReason = null;
+    console.warn(
+      "[AndroidBackground] Failed to start foreground notification",
+      {
+        error,
+        reason,
+      }
+    );
+  }
+};
+
+export const stopAndroidBleForegroundService = async (
+  reason: string
+): Promise<void> => {
+  if (Platform.OS !== "android") {
+    return;
+  }
+
+  await cancelForegroundNotificationAsync(reason);
+  await notifyAndroidDebug("Foreground service stopped", `reason=${reason}`);
+};
+
+type EnsureOptions = {
+  interactive?: boolean;
+  reason?: string;
+};
+
+type EnsureResult = {
+  notificationsGranted: boolean;
+  batteryOptimizationOk: boolean;
+  backgroundFetchStatus: number | null;
+  promptedBatterySettings: boolean;
+  requestedNotificationPermissions: boolean;
+};
+
+const requestPostNotificationsAsync = async (
+  interactive: boolean,
+  reason: string
+): Promise<{ granted: boolean; requested: boolean }> => {
+  const sdk = getAndroidSdkVersion();
+  if (sdk < 33) {
+    return { granted: true, requested: false };
+  }
+
+  try {
+    const current = await Notifications.getPermissionsAsync();
+    if (current.granted || current.status === "granted") {
+      return { granted: true, requested: false };
+    }
+
+    const alreadyPrompted = await AsyncStorage.getItem(NOTIFICATION_PROMPT_KEY);
+    if (!interactive && alreadyPrompted) {
+      await notifyAndroidDebug(
+        "POST_NOTIFICATIONS denied",
+        `reason=${reason}; status=${current.status}`
+      );
+      return { granted: false, requested: false };
+    }
+
+    if (!interactive) {
+      await AsyncStorage.setItem(NOTIFICATION_PROMPT_KEY, "requested");
+      await notifyAndroidDebug(
+        "POST_NOTIFICATIONS required",
+        `reason=${reason}; prompting deferred`
+      );
+      return { granted: false, requested: false };
+    }
+
+    const requested = await Notifications.requestPermissionsAsync({
+      android: {
+        allowAlert: true,
+        allowBadge: true,
+        allowSound: true,
+      },
+    });
+
+    const granted = requested.granted || requested.status === "granted";
+    await AsyncStorage.setItem(NOTIFICATION_PROMPT_KEY, "requested");
+    if (!granted) {
+      await notifyAndroidDebug(
+        "POST_NOTIFICATIONS denied",
+        `reason=${reason}; status=${requested.status}`
+      );
+    }
+    return { granted, requested: true };
+  } catch (error) {
+    console.warn("[AndroidBackground] Failed to request notifications", {
+      error,
+      reason,
+    });
+    return { granted: false, requested: false };
+  }
+};
+
+const maybePromptBatteryOptimizationAsync = async (
+  interactive: boolean,
+  reason: string
+): Promise<{ ok: boolean; prompted: boolean; status: number | null }> => {
+  try {
+    const status = await BackgroundFetch.status();
+    const ok = status === BackgroundFetch.STATUS_AVAILABLE;
+    if (ok) {
+      return { ok: true, prompted: false, status };
+    }
+
+    const statusLabel = backgroundFetchStatusLabel(status);
+    await notifyAndroidDebug(
+      "BackgroundFetch limited",
+      `reason=${reason}; status=${statusLabel}`
+    );
+
+    const alreadyPrompted = await AsyncStorage.getItem(BATTERY_PROMPT_KEY);
+    if (!interactive) {
+      if (!alreadyPrompted) {
+        await AsyncStorage.setItem(BATTERY_PROMPT_KEY, "deferred");
+      }
+      return { ok: false, prompted: false, status };
+    }
+
+    const packageName = Constants.expoConfig?.android?.package ?? "";
+
+    const intentLauncher = await loadIntentLauncher();
+    if (intentLauncher?.startActivityAsync) {
+      try {
+        await intentLauncher.startActivityAsync(
+          intentLauncher.ActivityAction.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+          packageName ? { data: `package:${packageName}` } : undefined
+        );
+        await AsyncStorage.setItem(BATTERY_PROMPT_KEY, "requested");
+        return { ok: false, prompted: true, status };
+      } catch (launchError) {
+        const message = String((launchError as Error)?.message ?? launchError);
+        console.warn(
+          "[AndroidBackground] Failed to launch battery optimization intent",
+          {
+            launchError,
+            reason,
+          }
+        );
+        await notifyAndroidDebug(
+          "Battery optimization intent failed",
+          `reason=${reason}; message=${message}`
+        );
+      }
+    } else {
+      await notifyAndroidDebug(
+        "Battery optimization intent unavailable",
+        `reason=${reason}`
+      );
+    }
+
+    try {
+      await Linking.openSettings();
+      await AsyncStorage.setItem(BATTERY_PROMPT_KEY, "requested");
+      await notifyAndroidDebug(
+        "Battery optimization settings opened",
+        `reason=${reason}`
+      );
+      return { ok: false, prompted: true, status };
+    } catch (linkError) {
+      console.warn(
+        "[AndroidBackground] Failed to open battery optimization settings",
+        {
+          linkError,
+          reason,
+        }
+      );
+      return { ok: false, prompted: false, status };
+    }
+  } catch (error) {
+    console.warn("[AndroidBackground] Failed to check BackgroundFetch status", {
+      error,
+      reason,
+    });
+    return { ok: false, prompted: false, status: null };
+  }
+};
+
+export const ensureAndroidBackgroundCapabilities = async (
+  options: EnsureOptions = {}
+): Promise<EnsureResult> => {
+  const { interactive = false, reason = "unspecified" } = options;
+
+  if (Platform.OS !== "android") {
+    return {
+      notificationsGranted: true,
+      batteryOptimizationOk: true,
+      backgroundFetchStatus: null,
+      promptedBatterySettings: false,
+      requestedNotificationPermissions: false,
+    };
+  }
+
+  const notificationResult = await requestPostNotificationsAsync(
+    interactive,
+    reason
+  );
+  const batteryResult = await maybePromptBatteryOptimizationAsync(
+    interactive,
+    reason
+  );
+
+  return {
+    notificationsGranted: notificationResult.granted,
+    batteryOptimizationOk: batteryResult.ok,
+    backgroundFetchStatus: batteryResult.status,
+    promptedBatterySettings: batteryResult.prompted,
+    requestedNotificationPermissions: notificationResult.requested,
+  };
+};

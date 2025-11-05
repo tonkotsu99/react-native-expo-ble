@@ -18,6 +18,13 @@ import {
   setInsideAreaReportStatus,
 } from "../state/appState";
 import { getUserId } from "../state/userProfile";
+import {
+  ensureAndroidBackgroundCapabilities,
+  logAndroidBackgroundState,
+  notifyAndroidDebug,
+  startAndroidBleForegroundService,
+  stopAndroidBleForegroundService,
+} from "../utils/androidBackground";
 import { postInsideAreaStatus } from "./insideAreaStatus";
 
 const SCAN_TIMEOUT_MS = 15000;
@@ -96,12 +103,62 @@ const scanAndReconnect = async (previousState: AppState): Promise<boolean> => {
     return false;
   }
 
+  let androidForegroundStarted = false;
+  const androidReason = "periodic-scan";
+
+  const stopAndroidForeground = async (phase: string) => {
+    if (!androidForegroundStarted) {
+      return;
+    }
+    androidForegroundStarted = false;
+    try {
+      await stopAndroidBleForegroundService(`${androidReason}:${phase}`);
+    } catch (error) {
+      console.warn(`${LOG_PREFIX} Failed to stop Android foreground service`, {
+        error,
+        phase,
+      });
+    }
+  };
+
+  if (Platform.OS === "android") {
+    try {
+      const capabilities = await ensureAndroidBackgroundCapabilities({
+        interactive: false,
+        reason: androidReason,
+      });
+      await logAndroidBackgroundState(`${androidReason}:start`, {
+        notificationsGranted: capabilities.notificationsGranted,
+        batteryOptimizationOk: capabilities.batteryOptimizationOk,
+        backgroundFetchStatus: capabilities.backgroundFetchStatus ?? null,
+      });
+
+      const canStartForeground =
+        capabilities.notificationsGranted && capabilities.batteryOptimizationOk;
+      if (canStartForeground) {
+        await startAndroidBleForegroundService(androidReason, {
+          title: "研究室ビーコンを再探索しています",
+          body: "在室状況を自動で確認しています",
+        });
+        androidForegroundStarted = true;
+      } else {
+        await notifyAndroidDebug(
+          "Foreground service unavailable",
+          `context=periodic; notificationsGranted=${capabilities.notificationsGranted}; batteryOptimizationOk=${capabilities.batteryOptimizationOk}`
+        );
+      }
+    } catch (error) {
+      console.warn(`${LOG_PREFIX} Failed to prepare Android foreground`, error);
+    }
+  }
+
   // 権限チェック
   const hasPermissions = await checkBluetoothPermissions();
   if (!hasPermissions) {
     console.warn(
       `${LOG_PREFIX} Bluetooth権限がありません。スキャンをスキップします。`
     );
+    await stopAndroidForeground("missing-permission");
     return false;
   }
 
@@ -115,11 +172,21 @@ const scanAndReconnect = async (previousState: AppState): Promise<boolean> => {
       settled = true;
       bleManager.stopDeviceScan();
       clearTimeout(timeoutId);
+      if (Platform.OS === "android") {
+        void logAndroidBackgroundState(`${androidReason}:finish`, {
+          result,
+        });
+        void stopAndroidForeground(result ? "success" : "failure");
+      }
       resolve(result);
     };
 
     const timeoutId = setTimeout(() => {
       console.warn(`${LOG_PREFIX} Scan timed out. No device detected.`);
+      if (Platform.OS === "android") {
+        void notifyAndroidDebug("Periodic scan timeout", "no device detected");
+        void stopAndroidForeground("timeout");
+      }
       finish(false);
     }, SCAN_TIMEOUT_MS);
 
@@ -127,6 +194,13 @@ const scanAndReconnect = async (previousState: AppState): Promise<boolean> => {
     bleManager.startDeviceScan(BLE_SERVICE_UUIDS, null, (error, device) => {
       if (error) {
         console.error(`${LOG_PREFIX} Scan error:`, error);
+        if (Platform.OS === "android") {
+          void notifyAndroidDebug(
+            "Periodic scan error",
+            String((error as Error)?.message ?? error)
+          );
+          void stopAndroidForeground("scan-error");
+        }
         finish(false);
         return;
       }
@@ -159,7 +233,14 @@ const scanAndReconnect = async (previousState: AppState): Promise<boolean> => {
 
       (async () => {
         try {
-          const connected = await device.connect();
+          const connectionOptions =
+            Platform.OS === "android"
+              ? { autoConnect: true as const, timeout: 15000 }
+              : { timeout: 15000 };
+          const connected = await bleManager.connectToDevice(
+            device.id,
+            connectionOptions
+          );
           await connected.discoverAllServicesAndCharacteristics();
           console.log(
             `${LOG_PREFIX} Reconnected to device: ${
@@ -175,9 +256,22 @@ const scanAndReconnect = async (previousState: AppState): Promise<boolean> => {
               `${LOG_PREFIX} Reconnected while already PRESENT. Skipping duplicate attendance post.`
             );
           }
+          if (Platform.OS === "android") {
+            await notifyAndroidDebug(
+              "Periodic reconnect success",
+              `device=${connected.name ?? connected.id}`
+            );
+          }
           finish(true);
         } catch (connectError) {
           console.error(`${LOG_PREFIX} Reconnect failed:`, connectError);
+          if (Platform.OS === "android") {
+            await notifyAndroidDebug(
+              "Periodic reconnect failed",
+              String((connectError as Error)?.message ?? connectError)
+            );
+            await stopAndroidForeground("connect-error");
+          }
           finish(false);
         }
       })();
@@ -188,6 +282,7 @@ const scanAndReconnect = async (previousState: AppState): Promise<boolean> => {
 /** 15分ごとに実行されるタスク */
 const periodicTask = async (taskId: string) => {
   console.log("[BackgroundFetch] taskId:", taskId);
+  await logAndroidBackgroundState("periodic-task", { taskId });
   const previousState = await getAppState();
   const rapidRetryWindowUntil = await getRapidRetryWindowUntil();
   const now = Date.now();
@@ -203,6 +298,12 @@ const periodicTask = async (taskId: string) => {
     } else {
       console.log(
         `${LOG_PREFIX} Already PRESENT. Skipping duplicate attendance post.`
+      );
+    }
+    if (Platform.OS === "android") {
+      await notifyAndroidDebug(
+        "Periodic check",
+        `connectedDevice=${device.name ?? device.id}; state=${previousState}`
       );
     }
     BackgroundFetch.finish(taskId);
@@ -242,6 +343,14 @@ const periodicTask = async (taskId: string) => {
             rapidRetryWindowUntil!
           ).toISOString()}. Skipping periodic scan.`
         );
+        if (Platform.OS === "android") {
+          await notifyAndroidDebug(
+            "Periodic scan skipped",
+            `reason=rapid-retry; until=${new Date(
+              rapidRetryWindowUntil!
+            ).toISOString()}`
+          );
+        }
       } else {
         console.log(`${LOG_PREFIX} Not connected. Starting scan...`);
         lastRetryTimestamp = now;
@@ -250,6 +359,14 @@ const periodicTask = async (taskId: string) => {
           console.log(
             `${LOG_PREFIX} Device not found. Will retry after backoff.`
           );
+          if (Platform.OS === "android") {
+            await notifyAndroidDebug(
+              "Periodic scan failed",
+              `state=${previousState}; nextRetry=${new Date(
+                now + RETRY_INTERVAL_MS
+              ).toISOString()}`
+            );
+          }
         }
       }
     } else {
@@ -258,9 +375,18 @@ const periodicTask = async (taskId: string) => {
           now - lastRetryTimestamp
         }ms)`
       );
+      if (Platform.OS === "android") {
+        await notifyAndroidDebug(
+          "Periodic scan deferred",
+          `elapsedMs=${now - lastRetryTimestamp}`
+        );
+      }
     }
   } else {
     console.log(`${LOG_PREFIX} Outside area. Skipping scan.`);
+    if (Platform.OS === "android") {
+      await notifyAndroidDebug("Periodic scan skipped", "state=OUTSIDE");
+    }
   }
 
   BackgroundFetch.finish(taskId);
@@ -273,6 +399,9 @@ export const initPeriodicTask = async () => {
       minimumFetchInterval: 15, // 実行間隔（分）
       stopOnTerminate: false,
       startOnBoot: true,
+      enableHeadless: true,
+      forceAlarmManager: true,
+      requiredNetworkType: BackgroundFetch.NETWORK_TYPE_ANY,
     },
     periodicTask,
     (taskId: string) => {
