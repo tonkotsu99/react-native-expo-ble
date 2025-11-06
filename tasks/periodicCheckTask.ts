@@ -1,15 +1,21 @@
 import { Platform } from "react-native";
 import BackgroundFetch from "react-native-background-fetch";
-import type { Device } from "react-native-ble-plx";
 import { bleManager } from "../bluetooth/bleManagerInstance";
-import { waitForBlePoweredOn } from "../bluetooth/bleStateUtils";
+import {
+  PRESENCE_TTL_MS,
+  getPresenceEnterSentAt,
+  getPresenceLastSeen,
+  recordPresenceDetection,
+  resetPresenceSession,
+  setPresenceEnterSentAt,
+  waitForBlePoweredOn,
+} from "../bluetooth/bleStateUtils";
 import {
   API_URL_ENTER,
   BLE_DEVICE_NAME_PREFIXES,
   BLE_SERVICE_UUIDS,
   DEBUG_BLE,
 } from "../constants";
-import type { AppState } from "../state/appState";
 import {
   getAppState,
   getInsideAreaReportStatus,
@@ -25,6 +31,10 @@ import {
   startAndroidBleForegroundService,
   stopAndroidBleForegroundService,
 } from "../utils/androidBackground";
+import {
+  sendBleConnectedNotification,
+  sendBleDisconnectedNotification,
+} from "../utils/notifications";
 import { postInsideAreaStatus } from "./insideAreaStatus";
 
 const SCAN_TIMEOUT_MS = 15000;
@@ -64,7 +74,10 @@ const checkBluetoothPermissions = async (): Promise<boolean> => {
   return true;
 };
 
-const postEnterAttendance = async (device: Device): Promise<void> => {
+const postEnterAttendance = async (payload: {
+  deviceId: string;
+  deviceName: string | null;
+}): Promise<void> => {
   try {
     const userId = await getUserId();
     if (!userId) {
@@ -76,8 +89,8 @@ const postEnterAttendance = async (device: Device): Promise<void> => {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        deviceId: device.id,
-        deviceName: device.name,
+        deviceId: payload.deviceId,
+        deviceName: payload.deviceName,
         userId,
       }),
     });
@@ -87,7 +100,9 @@ const postEnterAttendance = async (device: Device): Promise<void> => {
     }
 
     console.log(
-      `${LOG_PREFIX} Attendance posted for ${device.name ?? device.id}`
+      `${LOG_PREFIX} Attendance posted for ${
+        payload.deviceName ?? payload.deviceId
+      }`
     );
   } catch (error) {
     console.error(
@@ -96,10 +111,10 @@ const postEnterAttendance = async (device: Device): Promise<void> => {
   }
 };
 
-const scanAndReconnect = async (previousState: AppState): Promise<boolean> => {
+const scanAndReconnect = async (): Promise<boolean> => {
   const userId = await getUserId();
   if (!userId) {
-    console.warn(`${LOG_PREFIX} Skipping BLE scan: missing userId`);
+    console.warn(`${LOG_PREFIX} Skipping beacon scan: missing userId`);
     return false;
   }
 
@@ -152,7 +167,6 @@ const scanAndReconnect = async (previousState: AppState): Promise<boolean> => {
     }
   }
 
-  // 権限チェック
   const hasPermissions = await checkBluetoothPermissions();
   if (!hasPermissions) {
     console.warn(
@@ -162,120 +176,137 @@ const scanAndReconnect = async (previousState: AppState): Promise<boolean> => {
     return false;
   }
 
-  return new Promise((resolve) => {
+  return await new Promise((resolve) => {
     let settled = false;
 
-    const finish = (result: boolean) => {
-      if (settled) {
-        return;
-      }
+    const finish = async (result: boolean, reason: string) => {
+      if (settled) return;
       settled = true;
-      bleManager.stopDeviceScan();
+      try {
+        bleManager.stopDeviceScan();
+      } catch {}
       clearTimeout(timeoutId);
       if (Platform.OS === "android") {
         void logAndroidBackgroundState(`${androidReason}:finish`, {
           result,
+          reason,
         });
-        void stopAndroidForeground(result ? "success" : "failure");
       }
+      void stopAndroidForeground(result ? "success" : reason);
       resolve(result);
     };
 
     const timeoutId = setTimeout(() => {
-      console.warn(`${LOG_PREFIX} Scan timed out. No device detected.`);
+      console.warn(`${LOG_PREFIX} Beacon scan timed out`);
       if (Platform.OS === "android") {
-        void notifyAndroidDebug("Periodic scan timeout", "no device detected");
-        void stopAndroidForeground("timeout");
+        void notifyAndroidDebug("Periodic scan timeout", "no beacon detected");
       }
-      finish(false);
+      void finish(false, "timeout");
     }, SCAN_TIMEOUT_MS);
 
-    // Broad scan + JS filters for iOS reliability
-    bleManager.startDeviceScan(BLE_SERVICE_UUIDS, null, (error, device) => {
-      if (error) {
-        console.error(`${LOG_PREFIX} Scan error:`, error);
-        if (Platform.OS === "android") {
-          void notifyAndroidDebug(
-            "Periodic scan error",
-            String((error as Error)?.message ?? error)
+    const normalizedServiceUUIDs = BLE_SERVICE_UUIDS.map((u) =>
+      u.toLowerCase()
+    );
+    const normalizedNamePrefixes = BLE_DEVICE_NAME_PREFIXES.map((p) =>
+      p.toLowerCase()
+    );
+
+    try {
+      bleManager.startDeviceScan(
+        BLE_SERVICE_UUIDS,
+        null,
+        async (error, device) => {
+          if (settled) return;
+
+          if (error) {
+            console.error(`${LOG_PREFIX} Scan error:`, error);
+            if (Platform.OS === "android") {
+              await notifyAndroidDebug(
+                "Periodic scan error",
+                String((error as Error)?.message ?? error)
+              );
+            }
+            await finish(false, "scan-error");
+            return;
+          }
+
+          if (!device) {
+            return;
+          }
+
+          const serviceUUIDs = device.serviceUUIDs?.map((u) => u.toLowerCase());
+          const deviceName = device.name?.toLowerCase() ?? "";
+          const matchesService = serviceUUIDs
+            ? serviceUUIDs.some((u) => normalizedServiceUUIDs.includes(u))
+            : false;
+          const matchesName = normalizedNamePrefixes.some((p) =>
+            deviceName.startsWith(p)
           );
-          void stopAndroidForeground("scan-error");
+
+          if (!matchesService && !matchesName) {
+            return;
+          }
+
+          const timestamp = Date.now();
+
+          try {
+            await recordPresenceDetection(
+              {
+                deviceId: device.id,
+                deviceName: device.name ?? null,
+                rssi: typeof device.rssi === "number" ? device.rssi : null,
+              },
+              timestamp
+            );
+
+            const currentState = await getAppState();
+            if (currentState !== "PRESENT") {
+              await setAppState("PRESENT");
+              await sendBleConnectedNotification(device.name);
+            }
+
+            const enterSentAt = await getPresenceEnterSentAt();
+            if (enterSentAt === null) {
+              await postEnterAttendance({
+                deviceId: device.id,
+                deviceName: device.name ?? null,
+              });
+              await setPresenceEnterSentAt(timestamp);
+            }
+
+            if (Platform.OS === "android") {
+              await notifyAndroidDebug(
+                "Periodic detection success",
+                `device=${device.name ?? device.id}`
+              );
+            }
+
+            await finish(true, "detected");
+          } catch (detectionError) {
+            console.error(
+              `${LOG_PREFIX} Detection handling failed`,
+              detectionError
+            );
+            if (Platform.OS === "android") {
+              await notifyAndroidDebug(
+                "Periodic detection failed",
+                String((detectionError as Error)?.message ?? detectionError)
+              );
+            }
+            await finish(false, "detection-error");
+          }
         }
-        finish(false);
-        return;
-      }
-
-      if (!device) {
-        return;
-      }
-
-      const normalizedServiceUUIDs = BLE_SERVICE_UUIDS.map((u) =>
-        u.toLowerCase()
       );
-      const normalizedNamePrefixes = BLE_DEVICE_NAME_PREFIXES.map((p) =>
-        p.toLowerCase()
-      );
-      const serviceUUIDs = device.serviceUUIDs?.map((u) => u.toLowerCase());
-      const deviceName = device.name?.toLowerCase() ?? "";
-      const matchesService = serviceUUIDs
-        ? serviceUUIDs.some((u) => normalizedServiceUUIDs.includes(u))
-        : false;
-      const matchesName = normalizedNamePrefixes.some((p) =>
-        deviceName.startsWith(p)
-      );
-
-      if (!matchesService && !matchesName) {
-        return; // ignore non-target devices
+    } catch (startError) {
+      console.error(`${LOG_PREFIX} Failed to start beacon scan`, startError);
+      if (Platform.OS === "android") {
+        void notifyAndroidDebug(
+          "Periodic scan start error",
+          String((startError as Error)?.message ?? startError)
+        );
       }
-
-      // Stop scanning while attempting to connect so we don't process multiple devices.
-      bleManager.stopDeviceScan();
-
-      (async () => {
-        try {
-          const connectionOptions =
-            Platform.OS === "android"
-              ? { autoConnect: true as const, timeout: 15000 }
-              : { timeout: 15000 };
-          const connected = await bleManager.connectToDevice(
-            device.id,
-            connectionOptions
-          );
-          await connected.discoverAllServicesAndCharacteristics();
-          console.log(
-            `${LOG_PREFIX} Reconnected to device: ${
-              connected.name ?? connected.id
-            }`
-          );
-
-          await setAppState("PRESENT");
-          if (previousState !== "PRESENT") {
-            await postEnterAttendance(connected);
-          } else {
-            console.log(
-              `${LOG_PREFIX} Reconnected while already PRESENT. Skipping duplicate attendance post.`
-            );
-          }
-          if (Platform.OS === "android") {
-            await notifyAndroidDebug(
-              "Periodic reconnect success",
-              `device=${connected.name ?? connected.id}`
-            );
-          }
-          finish(true);
-        } catch (connectError) {
-          console.error(`${LOG_PREFIX} Reconnect failed:`, connectError);
-          if (Platform.OS === "android") {
-            await notifyAndroidDebug(
-              "Periodic reconnect failed",
-              String((connectError as Error)?.message ?? connectError)
-            );
-            await stopAndroidForeground("connect-error");
-          }
-          finish(false);
-        }
-      })();
-    });
+      void finish(false, "start-scan-error");
+    }
   });
 };
 
@@ -283,31 +314,23 @@ const scanAndReconnect = async (previousState: AppState): Promise<boolean> => {
 const periodicTask = async (taskId: string) => {
   console.log("[BackgroundFetch] taskId:", taskId);
   await logAndroidBackgroundState("periodic-task", { taskId });
+
   const previousState = await getAppState();
   const rapidRetryWindowUntil = await getRapidRetryWindowUntil();
   const now = Date.now();
   const rapidRetryWindowActive =
     typeof rapidRetryWindowUntil === "number" && now < rapidRetryWindowUntil;
-  const connectedDevices = await bleManager.connectedDevices(BLE_SERVICE_UUIDS);
 
-  if (connectedDevices.length > 0) {
-    const [device] = connectedDevices;
-    if (previousState !== "PRESENT") {
-      await setAppState("PRESENT");
-      await postEnterAttendance(device);
-    } else {
-      console.log(
-        `${LOG_PREFIX} Already PRESENT. Skipping duplicate attendance post.`
-      );
-    }
-    if (Platform.OS === "android") {
-      await notifyAndroidDebug(
-        "Periodic check",
-        `connectedDevice=${device.name ?? device.id}; state=${previousState}`
-      );
-    }
-    BackgroundFetch.finish(taskId);
-    return;
+  const lastSeen = await getPresenceLastSeen();
+  const presenceFresh = lastSeen !== null && now - lastSeen < PRESENCE_TTL_MS;
+
+  if (previousState === "PRESENT" && !presenceFresh) {
+    console.log(
+      `${LOG_PREFIX} Presence TTL exceeded. Downgrading to UNCONFIRMED.`
+    );
+    await resetPresenceSession();
+    await setAppState("UNCONFIRMED");
+    await sendBleDisconnectedNotification(null);
   }
 
   if (
@@ -332,44 +355,13 @@ const periodicTask = async (taskId: string) => {
         }
       }
     }
+
     const shouldRetryNow =
+      !presenceFresh ||
       previousState !== "INSIDE_AREA" ||
       now - lastRetryTimestamp >= RETRY_INTERVAL_MS;
 
-    if (shouldRetryNow) {
-      if (rapidRetryWindowActive) {
-        console.log(
-          `${LOG_PREFIX} Rapid retry window active until ${new Date(
-            rapidRetryWindowUntil!
-          ).toISOString()}. Skipping periodic scan.`
-        );
-        if (Platform.OS === "android") {
-          await notifyAndroidDebug(
-            "Periodic scan skipped",
-            `reason=rapid-retry; until=${new Date(
-              rapidRetryWindowUntil!
-            ).toISOString()}`
-          );
-        }
-      } else {
-        console.log(`${LOG_PREFIX} Not connected. Starting scan...`);
-        lastRetryTimestamp = now;
-        const connected = await scanAndReconnect(previousState);
-        if (!connected) {
-          console.log(
-            `${LOG_PREFIX} Device not found. Will retry after backoff.`
-          );
-          if (Platform.OS === "android") {
-            await notifyAndroidDebug(
-              "Periodic scan failed",
-              `state=${previousState}; nextRetry=${new Date(
-                now + RETRY_INTERVAL_MS
-              ).toISOString()}`
-            );
-          }
-        }
-      }
-    } else {
+    if (!shouldRetryNow) {
       console.log(
         `${LOG_PREFIX} Retry deferred to avoid frequent scans (elapsed ${
           now - lastRetryTimestamp
@@ -379,6 +371,51 @@ const periodicTask = async (taskId: string) => {
         await notifyAndroidDebug(
           "Periodic scan deferred",
           `elapsedMs=${now - lastRetryTimestamp}`
+        );
+      }
+      BackgroundFetch.finish(taskId);
+      return;
+    }
+
+    if (rapidRetryWindowActive) {
+      console.log(
+        `${LOG_PREFIX} Rapid retry window active until ${new Date(
+          rapidRetryWindowUntil!
+        ).toISOString()}. Skipping periodic scan.`
+      );
+      if (Platform.OS === "android") {
+        await notifyAndroidDebug(
+          "Periodic scan skipped",
+          `reason=rapid-retry; until=${new Date(
+            rapidRetryWindowUntil!
+          ).toISOString()}`
+        );
+      }
+      BackgroundFetch.finish(taskId);
+      return;
+    }
+
+    if (presenceFresh) {
+      console.log(
+        `${LOG_PREFIX} Beacon detection still fresh. Skipping additional scan.`
+      );
+      BackgroundFetch.finish(taskId);
+      return;
+    }
+
+    console.log(`${LOG_PREFIX} Beacon not fresh. Starting detection scan...`);
+    lastRetryTimestamp = now;
+    const detected = await scanAndReconnect();
+    if (!detected) {
+      console.log(
+        `${LOG_PREFIX} Beacon not detected. Will retry after backoff.`
+      );
+      if (Platform.OS === "android") {
+        await notifyAndroidDebug(
+          "Periodic scan failed",
+          `state=${previousState}; nextRetry=${new Date(
+            now + RETRY_INTERVAL_MS
+          ).toISOString()}`
         );
       }
     }

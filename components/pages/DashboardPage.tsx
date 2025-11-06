@@ -12,8 +12,7 @@ export default function DashboardPage() {
     requestPermissions,
     startScan,
     disconnectDevice,
-    connectedDevice,
-    connectedRssi,
+    detectedBeacon,
     refresh,
   } = useBLEContext();
 
@@ -29,30 +28,31 @@ export default function DashboardPage() {
   // App state is kept in sync by useAppState
 
   const bleConnectionStatus: BLEConnectionStatus = useMemo(() => {
-    return connectedDevice
+    return detectedBeacon
       ? "connected"
       : isScanning
       ? "scanning"
       : "disconnected";
-  }, [connectedDevice, isScanning]);
+  }, [detectedBeacon, isScanning]);
 
   const dashboardState = useMemo(
     () => ({
       appState,
       appStateTimestamp: new Date(),
       bleConnectionStatus,
-      deviceInfo: connectedDevice
+      deviceInfo: detectedBeacon
         ? {
-            id: connectedDevice.id,
-            name: connectedDevice.name || "Unknown Device",
-            rssi: (connectedRssi ?? connectedDevice.rssi) || undefined,
+            id: detectedBeacon.id,
+            name: detectedBeacon.name || "Unknown Device",
+            rssi: detectedBeacon.rssi ?? undefined,
+            lastSeen: new Date(detectedBeacon.lastSeen),
           }
         : undefined,
       lastUpdated: new Date(),
       isOnline: true,
       hasUnreadLogs: false,
     }),
-    [appState, bleConnectionStatus, connectedDevice, connectedRssi]
+    [appState, bleConnectionStatus, detectedBeacon]
   );
 
   const handleScan = useCallback(async () => {
@@ -100,7 +100,7 @@ export default function DashboardPage() {
     (async () => {
       try {
         // Refresh app state from storage
-        // Lightweight BLE sync: adopt existing connections without scanning
+        // Lightweight BLE sync: refresh detection metadata without scanning
         await requestPermissions();
         await refresh();
       } finally {
@@ -114,11 +114,12 @@ export default function DashboardPage() {
       dashboardState={dashboardState}
       connectionStatus={bleConnectionStatus}
       deviceInfo={
-        connectedDevice
+        detectedBeacon
           ? {
-              id: connectedDevice.id,
-              name: connectedDevice.name || "Unknown Device",
-              rssi: (connectedRssi ?? connectedDevice.rssi) || undefined,
+              id: detectedBeacon.id,
+              name: detectedBeacon.name || "Unknown Device",
+              rssi: detectedBeacon.rssi ?? undefined,
+              lastSeen: new Date(detectedBeacon.lastSeen),
             }
           : undefined
       }

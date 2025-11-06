@@ -1,5 +1,14 @@
 import { bleManager } from "@/bluetooth/bleManagerInstance";
 import {
+  getPresenceEnterSentAt,
+  getPresenceLastSeen,
+  getPresenceMetadata,
+  PRESENCE_TTL_MS,
+  recordPresenceDetection,
+  resetPresenceSession,
+  setPresenceEnterSentAt,
+} from "@/bluetooth/bleStateUtils";
+import {
   API_URL_ENTER,
   BLE_DEVICE_NAME_PREFIXES,
   BLE_SERVICE_UUIDS,
@@ -15,33 +24,42 @@ import {
   sendDebugNotification,
 } from "@/utils/notifications";
 import * as DeviceInfo from "expo-device";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AppState, PermissionsAndroid, Platform } from "react-native";
 import { Device, State } from "react-native-ble-plx";
+
+export type BeaconDetection = {
+  id: string;
+  name: string | null;
+  rssi: number | null;
+  lastSeen: number;
+};
 
 interface UseBLE {
   requestPermissions(): Promise<boolean>;
   startScan(): Promise<void>;
   disconnectDevice(): Promise<void>;
   refresh(): Promise<void>;
-  connectedDevice: Device | null;
-  connectedRssi: number | null;
+  detectedBeacon: BeaconDetection | null;
 }
 
-const postAttendance = async (url: string, device: Device): Promise<void> => {
+const postEnterAttendance = async (payload: {
+  deviceId: string;
+  deviceName: string | null;
+}): Promise<void> => {
   try {
     const userId = await getUserId();
     if (!userId) {
-      console.warn(`API Skipped: Missing userId for POST to ${url}`);
+      console.warn("[BLE] Skipping enter attendance: missing userId");
       return;
     }
 
-    const response = await fetch(url, {
+    const response = await fetch(API_URL_ENTER, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        deviceId: device.id,
-        deviceName: device.name,
+        deviceId: payload.deviceId,
+        deviceName: payload.deviceName,
         userId,
       }),
     });
@@ -49,103 +67,33 @@ const postAttendance = async (url: string, device: Device): Promise<void> => {
     if (!response.ok) {
       throw new Error(`API Error: ${response.status}`);
     }
-    console.log(`API Success: POST to ${url}`);
+
+    console.log("[BLE] Enter attendance posted", payload);
   } catch (error) {
-    console.error(`API Failed: ${(error as Error).message}`);
+    console.error(
+      "[BLE] Failed to post enter attendance",
+      (error as Error).message
+    );
   }
 };
 
 export const useBLE = (): UseBLE => {
-  const [connectedDevice, setConnectedDevice] = useState<Device | null>(null);
-  const [connectedRssi, setConnectedRssi] = useState<number | null>(null);
-  const rssiIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  // Adopt dedup/throttle guards
-  const adoptInFlightRef = useRef(false);
-  const lastAdoptRef = useRef<{ id: string | null; ts: number }>({
-    id: null,
-    ts: 0,
-  });
-  const debug = async (title: string, body: string) => {
+  const [detectedBeacon, setDetectedBeacon] = useState<BeaconDetection | null>(
+    null
+  );
+  const isScanningRef = useRef(false);
+
+  const debug = useCallback(async (title: string, body: string) => {
     console.log(`[BLE][DEBUG] ${title}: ${body}`);
-    if (DEBUG_BLE) {
-      try {
-        await sendDebugNotification(title, body);
-      } catch {}
-    }
-  };
-  const clearRssiInterval = () => {
-    if (rssiIntervalRef.current) {
-      clearInterval(rssiIntervalRef.current);
-      rssiIntervalRef.current = null;
-    }
-  };
-  const adoptExistingConnection = async () => {
-    if (adoptInFlightRef.current) return;
-    adoptInFlightRef.current = true;
+    if (!DEBUG_BLE) return;
     try {
-      const already = await bleManager.connectedDevices(BLE_SERVICE_UUIDS);
-      if (already.length > 0) {
-        const normalizedPrefixes = BLE_DEVICE_NAME_PREFIXES.map((p) =>
-          p.toLowerCase()
-        );
-        const preferred =
-          already.find((d) =>
-            d.name
-              ? normalizedPrefixes.some((p) =>
-                  d.name!.toLowerCase().startsWith(p)
-                )
-              : false
-          ) || already[0];
-
-        // If we already track this device, do nothing
-        if (connectedDevice && connectedDevice.id === preferred.id) return;
-
-        setConnectedDevice(preferred);
-        setConnectedRssi(preferred.rssi ?? null);
-        startRssiPolling(preferred);
-
-        // Throttle duplicate adopt logs for the same id within 5s
-        const now = Date.now();
-        const shouldLog = !(
-          lastAdoptRef.current.id === preferred.id &&
-          now - lastAdoptRef.current.ts < 5000
-        );
-        if (shouldLog && DEBUG_BLE) {
-          lastAdoptRef.current = { id: preferred.id, ts: now };
-          await debug(
-            "Adopted Existing Connection (auto)",
-            `id=${preferred.id}, name=${preferred.name ?? "(none)"}`
-          );
-        }
-      }
+      await sendDebugNotification(title, body);
     } catch {
-    } finally {
-      adoptInFlightRef.current = false;
+      // ignore notification failures in debug helper
     }
-  };
-  const startRssiPolling = (device: Device) => {
-    clearRssiInterval();
-    rssiIntervalRef.current = setInterval(async () => {
-      try {
-        const updatedAny: any = await device.readRSSI();
-        // Handle both return shapes: number (Android) or Device (iOS/types)
-        if (typeof updatedAny === "number") {
-          setConnectedRssi(updatedAny);
-          if (DEBUG_BLE) {
-            debug("RSSI", `id=${device.id}, rssi=${updatedAny}`);
-          }
-        } else {
-          const updatedDevice = updatedAny as Device;
-          setConnectedDevice(updatedDevice);
-          setConnectedRssi(updatedDevice.rssi ?? null);
-          if (DEBUG_BLE) {
-            debug("RSSI", `id=${updatedDevice.id}, rssi=${updatedDevice.rssi}`);
-          }
-        }
-      } catch {}
-    }, 2000);
-  };
-  const requestPermissions = async (): Promise<boolean> => {
+  }, []);
+
+  const requestPermissions = useCallback(async (): Promise<boolean> => {
     if (Platform.OS === "ios") {
       try {
         const state = await bleManager.state();
@@ -205,168 +153,88 @@ export const useBLE = (): UseBLE => {
           }
         );
         return granted === PermissionsAndroid.RESULTS.GRANTED;
-      } else {
-        const result = await PermissionsAndroid.requestMultiple([
-          PermissionsAndroid.PERMISSIONS.BLUETOOTH_SCAN,
-          PermissionsAndroid.PERMISSIONS.BLUETOOTH_CONNECT,
-        ]);
-
-        return (
-          result[PermissionsAndroid.PERMISSIONS.BLUETOOTH_SCAN] ===
-            PermissionsAndroid.RESULTS.GRANTED &&
-          result[PermissionsAndroid.PERMISSIONS.BLUETOOTH_CONNECT] ===
-            PermissionsAndroid.RESULTS.GRANTED
-        );
       }
+
+      const result = await PermissionsAndroid.requestMultiple([
+        PermissionsAndroid.PERMISSIONS.BLUETOOTH_SCAN,
+        PermissionsAndroid.PERMISSIONS.BLUETOOTH_CONNECT,
+      ]);
+
+      const scanGranted =
+        result[PermissionsAndroid.PERMISSIONS.BLUETOOTH_SCAN] ===
+        PermissionsAndroid.RESULTS.GRANTED;
+      const connectGranted =
+        result[PermissionsAndroid.PERMISSIONS.BLUETOOTH_CONNECT] ===
+        PermissionsAndroid.RESULTS.GRANTED;
+
+      return scanGranted && connectGranted;
     }
 
     return true;
-  };
+  }, [debug]);
 
-  // On mount: adopt any background-established connection
-  useEffect(() => {
-    adoptExistingConnection();
-    // Also when app returns to foreground
-    const sub = AppState.addEventListener("change", (state) => {
-      if (state === "active") adoptExistingConnection();
-    });
-    // Also when Bluetooth state becomes PoweredOn
-    const bleSub = bleManager.onStateChange((state) => {
-      if (state === State.PoweredOn) {
-        adoptExistingConnection();
+  const setPresenceState = useCallback(
+    async (state: "PRESENT" | "UNCONFIRMED") => {
+      try {
+        const current = await getAppState();
+        if (current === state) return;
+        if (state === "UNCONFIRMED" && current === "OUTSIDE") return;
+        await setAppState(state);
+      } catch (error) {
+        console.warn("[BLE] Failed to update app state", error);
       }
-    }, false);
-    return () => {
-      try {
-        sub.remove();
-      } catch {}
-      try {
-        bleSub.remove();
-      } catch {}
+    },
+    []
+  );
+
+  const handleDetection = useCallback(async (device: Device): Promise<void> => {
+    const timestamp = Date.now();
+    const detectionPayload = {
+      deviceId: device.id,
+      deviceName: device.name ?? null,
+      rssi: typeof device.rssi === "number" ? device.rssi : null,
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
-  useEffect(() => {
-    const unsubscribe = subscribeAppState((state) => {
-      if (state !== "PRESENT") {
-        clearRssiInterval();
-        setConnectedDevice(null);
-        setConnectedRssi(null);
-      }
+    await recordPresenceDetection(detectionPayload, timestamp);
+
+    setDetectedBeacon({
+      id: detectionPayload.deviceId,
+      name: detectionPayload.deviceName,
+      rssi: detectionPayload.rssi,
+      lastSeen: timestamp,
     });
 
-    return () => {
-      try {
-        unsubscribe();
-      } catch {}
-    };
-  }, []);
-
-  const connectToDevice = async (device: Device): Promise<void> => {
-    try {
-      if (DEBUG_BLE) {
-        await debug(
-          "Connecting",
-          `id=${device.id}, name=${device.name ?? "(none)"}`
-        );
-      }
-      const subscription = device.onDisconnected(
-        async (error, disconectedDevice) => {
-          if (disconectedDevice) {
-            console.log(`デバイスが切断されました: ${disconectedDevice.name}`);
-            // 退室APIはジオフェンシングのExit時に行う。BLE切断時はスキップ。
-            // BLE切断通知を送信
-            await sendBleDisconnectedNotification(disconectedDevice.name);
-            if (DEBUG_BLE)
-              await debug(
-                "Disconnected",
-                `id=${disconectedDevice.id}, name=${
-                  disconectedDevice.name ?? "(none)"
-                }, error=${
-                  error ? String((error as any)?.message ?? error) : "none"
-                }`
-              );
-          }
-
-          // 状態を「学内（INSIDE_AREA）」へ戻す（位置情報で本当に外へ出た場合は
-          // ジオフェンシングのExitがOUTSIDEへ更新・退室APIを送信する）
-          try {
-            const current = await getAppState();
-            if (current !== "OUTSIDE") {
-              await setAppState("INSIDE_AREA");
-            }
-          } catch {}
-
-          clearRssiInterval();
-          setConnectedDevice(null);
-          setConnectedRssi(null);
-          subscription.remove();
-        }
-      );
-
-      console.log(`接続中: ${device.name}`);
-      const connected = await device.connect();
-      if (DEBUG_BLE) await debug("Connected", `id=${connected.id}`);
-      await connected.discoverAllServicesAndCharacteristics();
-      if (DEBUG_BLE) await debug("Discovered Services", `id=${connected.id}`);
-      setConnectedDevice(connected);
-      setConnectedRssi(connected.rssi ?? null);
-      startRssiPolling(connected);
+    const previousState = await getAppState();
+    if (previousState !== "PRESENT") {
       await setAppState("PRESENT");
-      await postAttendance(API_URL_ENTER, connected);
-      // BLE接続成功通知を送信
-      await sendBleConnectedNotification(connected.name);
-      console.log(`接続成功: ${connected.name}`);
-    } catch (error) {
-      console.error(`接続失敗: ${device.name}`, error);
-      if (DEBUG_BLE)
-        await debug(
-          "Connect Failed",
-          `id=${device.id}, name=${device.name ?? "(none)"}, error=${String(
-            (error as any)?.message ?? error
-          )}`
-        );
-      throw error;
+      await sendBleConnectedNotification(detectionPayload.deviceName);
     }
-  };
 
-  const startScan = async (): Promise<void> => {
+    const enterSentAt = await getPresenceEnterSentAt();
+    if (enterSentAt === null) {
+      await postEnterAttendance({
+        deviceId: detectionPayload.deviceId,
+        deviceName: detectionPayload.deviceName,
+      });
+      await setPresenceEnterSentAt(timestamp);
+    }
+  }, []);
+
+  const startScan = useCallback(async (): Promise<void> => {
+    if (isScanningRef.current) {
+      await debug("Scan Skipped", "scan already in progress");
+      return;
+    }
+
     const userId = await getUserId();
     if (!userId) {
       const message = "[BLE] Cannot start scan: missing userId";
       console.warn(message);
-      if (DEBUG_BLE) await debug("Scan Skipped", "missing userId");
+      await debug("Scan Skipped", "missing userId");
       throw new Error(message);
     }
 
-    // First, adopt any existing connection established by background tasks
-    try {
-      const already = await bleManager.connectedDevices(BLE_SERVICE_UUIDS);
-      if (already.length > 0) {
-        // Prefer a device that matches our name prefix when multiple are present
-        const normalizedPrefixes = BLE_DEVICE_NAME_PREFIXES.map((p) =>
-          p.toLowerCase()
-        );
-        const preferred =
-          already.find((d) =>
-            d.name
-              ? normalizedPrefixes.some((p) =>
-                  d.name!.toLowerCase().startsWith(p)
-                )
-              : false
-          ) || already[0];
-        setConnectedDevice(preferred);
-        setConnectedRssi(preferred.rssi ?? null);
-        startRssiPolling(preferred);
-        if (DEBUG_BLE)
-          debug(
-            "Adopted Existing Connection",
-            `id=${preferred.id}, name=${preferred.name ?? "(none)"}`
-          );
-        return; // Consider scan satisfied
-      }
-    } catch {}
+    isScanningRef.current = true;
 
     const normalizedServiceUUIDs = BLE_SERVICE_UUIDS.map((uuid) =>
       uuid.toLowerCase()
@@ -375,79 +243,43 @@ export const useBLE = (): UseBLE => {
       prefix.toLowerCase()
     );
 
-    return new Promise((resolve, reject) => {
+    await new Promise<void>((resolve, reject) => {
       let finished = false;
 
-      // Safety timeout to avoid indefinite scanning
-      const timeoutMs = 15000;
-      const timeoutId = setTimeout(async () => {
-        if (finished) return;
-        finished = true;
+      const stopScan = () => {
         try {
           bleManager.stopDeviceScan();
         } catch {}
+      };
+
+      const timeoutMs = 15000;
+      const timeoutId = setTimeout(() => {
+        if (finished) return;
+        finished = true;
+        stopScan();
         console.warn("[BLE] Scan timeout");
-        if (DEBUG_BLE)
-          debug(
-            "Scan Timeout",
-            `scanned=${scannedCount}, matched=${matchedCount}`
-          );
-        // Before rejecting, adopt an existing background connection if present
-        try {
-          const already = await bleManager.connectedDevices(BLE_SERVICE_UUIDS);
-          if (already.length > 0) {
-            const normalizedPrefixes = BLE_DEVICE_NAME_PREFIXES.map((p) =>
-              p.toLowerCase()
-            );
-            const preferred =
-              already.find((d) =>
-                d.name
-                  ? normalizedPrefixes.some((p) =>
-                      d.name!.toLowerCase().startsWith(p)
-                    )
-                  : false
-              ) || already[0];
-            setConnectedDevice(preferred);
-            setConnectedRssi(preferred.rssi ?? null);
-            startRssiPolling(preferred);
-            if (DEBUG_BLE)
-              debug(
-                "Adopted Existing Connection (post-timeout)",
-                `id=${preferred.id}, name=${preferred.name ?? "(none)"}`
-              );
-            resolve();
-            return;
-          }
-        } catch {}
-        const err = new Error("BLE scan timed out");
-        reject(err);
+        reject(new Error("BLE scan timed out"));
       }, timeoutMs);
 
-      let scannedCount = 0;
-      let matchedCount = 0;
+      if (DEBUG_BLE) {
+        void debug("Scan Started", `timeout=${timeoutMs}ms`);
+      }
 
-      if (DEBUG_BLE) debug("Scan Started", `timeout=${timeoutMs}ms`);
-
-      // Important: pass null to discover broadly, then filter in JS
-      // Some devices don't advertise target services in the scan response on iOS
-      bleManager.startDeviceScan(null, null, (error, device) => {
+      bleManager.startDeviceScan(null, null, async (error, device) => {
         if (finished) return;
 
         if (error) {
-          console.error("[BLE] Scan Error:", error);
           finished = true;
           clearTimeout(timeoutId);
-          try {
-            bleManager.stopDeviceScan();
-          } catch {}
-          if (DEBUG_BLE)
-            debug("Scan Error", String((error as any)?.message ?? error));
+          stopScan();
+          console.error("[BLE] Scan error", error);
           reject(error);
           return;
         }
 
-        if (!device) return;
-        scannedCount++;
+        if (!device) {
+          return;
+        }
 
         const serviceUUIDs = device.serviceUUIDs?.map((uuid) =>
           uuid.toLowerCase()
@@ -460,81 +292,135 @@ export const useBLE = (): UseBLE => {
           deviceName.startsWith(prefix)
         );
 
-        if (matchesService || matchesName) {
-          matchedCount++;
-          console.log("[BLE] Target device detected:", {
-            id: device.id,
-            name: device.name,
-            rssi: device.rssi,
-            serviceUUIDs: device.serviceUUIDs,
-          });
-
-          finished = true;
-          clearTimeout(timeoutId);
-          try {
-            bleManager.stopDeviceScan();
-          } catch {}
-          if (DEBUG_BLE)
-            debug(
-              "Match Found",
-              `name=${
-                device.name ?? "(none)"
-              }, service=${matchesService}, prefix=${matchesName}, rssi=${
-                device.rssi
-              }`
-            );
-          connectToDevice(device)
-            .then(() => resolve())
-            .catch((e) => reject(e));
-        } else if (__DEV__) {
-          // Debug log can be noisy; keep in dev builds only
-          console.log("[BLE] Ignoring device (no match):", {
-            id: device.id,
-            name: device.name,
-            rssi: device.rssi,
-            serviceUUIDs: device.serviceUUIDs,
-          });
-        }
-      });
-    });
-  };
-
-  const disconnectDevice = async (): Promise<void> => {
-    if (connectedDevice) {
-      try {
-        clearRssiInterval();
-        // If already disconnected (or in the middle of disconnect), avoid throwing
-        let isConn = false;
-        try {
-          isConn = await connectedDevice.isConnected();
-        } catch {}
-        if (!isConn) {
-          setConnectedDevice(null);
-          setConnectedRssi(null);
+        if (!matchesService && !matchesName) {
+          if (__DEV__) {
+            console.log("[BLE] Ignoring device", {
+              id: device.id,
+              name: device.name,
+              rssi: device.rssi,
+            });
+          }
           return;
         }
-        await connectedDevice.cancelConnection();
-      } catch (error) {
-        const msg = String((error as any)?.message ?? error);
-        // 'Operation was cancelled' is benign when a parallel disconnect occurs
-        if (
-          msg.includes("Operation was cancelled") ||
-          msg.includes("not connected") ||
-          msg.includes("Device is not connected")
-        ) {
-          console.warn("切断はすでに完了していました。メッセージ:", msg);
-        } else {
-          console.error("切断失敗:", error);
+
+        finished = true;
+        clearTimeout(timeoutId);
+        stopScan();
+
+        if (DEBUG_BLE) {
+          void debug(
+            "Beacon Detected",
+            `id=${device.id}, name=${device.name ?? "(none)"}, rssi=${
+              device.rssi ?? "unknown"
+            }`
+          );
         }
-      }
+
+        try {
+          await handleDetection(device);
+          resolve();
+        } catch (detectionError) {
+          reject(detectionError);
+        }
+      });
+    })
+      .catch(async (error) => {
+        await debug("Scan Failed", String((error as Error).message));
+        throw error;
+      })
+      .finally(() => {
+        isScanningRef.current = false;
+      });
+  }, [debug, handleDetection]);
+
+  const disconnectDevice = useCallback(async (): Promise<void> => {
+    await resetPresenceSession();
+    setDetectedBeacon(null);
+    await setPresenceState("UNCONFIRMED");
+    await sendBleDisconnectedNotification(null);
+  }, [setPresenceState]);
+
+  const refresh = useCallback(async (): Promise<void> => {
+    const [metadata, lastSeen] = await Promise.all([
+      getPresenceMetadata(),
+      getPresenceLastSeen(),
+    ]);
+
+    if (!lastSeen) {
+      setDetectedBeacon(null);
+      return;
     }
-  };
-  return {
-    requestPermissions,
-    startScan,
-    disconnectDevice,
-    refresh: adoptExistingConnection,
-    connectedDevice,
-    connectedRssi,
-  };
+
+    const age = Date.now() - lastSeen;
+    if (age >= PRESENCE_TTL_MS) {
+      setDetectedBeacon(null);
+      return;
+    }
+
+    setDetectedBeacon((previous) => {
+      const fallback = previous ?? {
+        id: metadata?.deviceId ?? "unknown",
+        name: metadata?.deviceName ?? null,
+        rssi: metadata?.rssi ?? null,
+        lastSeen,
+      };
+      return {
+        id: metadata?.deviceId ?? fallback.id,
+        name: metadata?.deviceName ?? fallback.name ?? null,
+        rssi: metadata?.rssi ?? fallback.rssi ?? null,
+        lastSeen,
+      };
+    });
+  }, []);
+
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
+
+  useEffect(() => {
+    const subscription = subscribeAppState((state) => {
+      if (state !== "PRESENT") {
+        setDetectedBeacon(null);
+      }
+    });
+    return () => {
+      try {
+        subscription();
+      } catch {}
+    };
+  }, []);
+
+  useEffect(() => {
+    const appStateSub = AppState.addEventListener("change", (state) => {
+      if (state === "active") {
+        void refresh();
+      }
+    });
+
+    const bleSub = bleManager.onStateChange((state) => {
+      if (state === State.PoweredOn) {
+        void refresh();
+      }
+    }, true);
+
+    return () => {
+      try {
+        appStateSub.remove();
+      } catch {}
+      try {
+        bleSub.remove();
+      } catch {}
+    };
+  }, [refresh]);
+
+  return useMemo(
+    () => ({
+      requestPermissions,
+      startScan,
+      disconnectDevice,
+      refresh,
+      detectedBeacon,
+    }),
+    [requestPermissions, startScan, disconnectDevice, refresh, detectedBeacon]
+  );
 };

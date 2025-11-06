@@ -1,0 +1,6 @@
+- [x] BLE 状態管理: `bleStateUtils` に広告検知タイムスタンプと `presenceTtlMs` 管理ユーティリティを追加し、AsyncStorage と in-memory キャッシュの整合を取る。
+- [x] フロント専用フック: `useBLE` を改修して広告検知イベントを購読し、接続 API ではなく広告ベースで `setAppState('PRESENT')` / `setAppState('UNCONFIRMED')` を切り替える。
+- [x] ジオフェンスタスク: `tasks/geofencingTask.ts` の入場処理から GATT 接続ロジックを排除し、広告検知ウィンドウと Rapid Retry を組み合わせて `presenceTtlMs` を更新する。
+- [x] 定期チェック: `tasks/periodicCheckTask.ts` で広告検知のヘッドレス処理／通知を実装し、未検知時のダウングレードとログを追加する。
+- [x] UI/通知: 在室トーストや `StatusIndicator` 表示を「接続完了」から「ビーコン検出」に変更し、文言とアイコンを同期させる。
+- [ ] 検証: `npm run lint` を実行し、Android Dev Client で複数端末が同時に `PRESENT` に遷移できることを確認する (広告検知ログ + Attendance API レスポンスを収集)。`npm run lint` は実行済み。デバイス検証は未着手。
