@@ -52,6 +52,55 @@ let rapidRetryTimeout: ReturnType<typeof setTimeout> | null = null;
 let rapidRetryWindowEndsAt = 0;
 let backgroundScanInFlight = false;
 
+// ----- Continuous BLE Scan State -----
+export let isContinuousScanActive = false;
+let unconfirmedTimer: ReturnType<typeof setTimeout> | null = null;
+
+/**
+ * UNCONFIRMED タイマーをクリア
+ */
+export const clearUnconfirmedTimer = (): void => {
+  if (unconfirmedTimer) {
+    clearTimeout(unconfirmedTimer);
+    unconfirmedTimer = null;
+    console.log("[Geofencing Task] Unconfirmed timer cleared");
+  }
+};
+
+/**
+ * UNCONFIRMED タイマーを開始
+ * @param ms - タイマーの待機時間（ミリ秒）
+ */
+export const startUnconfirmedTimer = async (ms: number): Promise<void> => {
+  clearUnconfirmedTimer();
+
+  console.log(`[Geofencing Task] Starting unconfirmed timer (${ms}ms)`);
+  unconfirmedTimer = setTimeout(async () => {
+    try {
+      const currentState = await getAppState();
+      if (currentState === "UNCONFIRMED") {
+        await setAppState("INSIDE_AREA");
+        console.log(
+          "[Geofencing Task] Unconfirmed timer expired. State changed to INSIDE_AREA"
+        );
+
+        // 退室通知を送信
+        const { sendBleDisconnectedNotification } = await import(
+          "../utils/notifications"
+        );
+        await sendBleDisconnectedNotification(null);
+      }
+    } catch (error) {
+      console.error(
+        "[Geofencing Task] Failed to handle unconfirmed timer:",
+        error
+      );
+    } finally {
+      unconfirmedTimer = null;
+    }
+  }, ms);
+};
+
 const safeSendDebugNotification = async (
   title: string,
   body: string
@@ -103,6 +152,162 @@ const stopRapidRetryWindow = async (
       "[Geofencing Task] Failed to persist rapid retry window stop",
       error
     );
+  }
+};
+
+/**
+ * 常時 BLE スキャンを開始（Android のみ）
+ * RSSI 値に基づいて研究室の入退室を判定
+ */
+const startContinuousBleScanner = async (): Promise<void> => {
+  if (isContinuousScanActive) {
+    console.log("[Geofencing Task] Continuous scan already active. Skipping.");
+    return;
+  }
+
+  const userId = await getUserId();
+  if (!userId) {
+    console.warn("[Geofencing Task] Skipping continuous scan: missing userId");
+    return;
+  }
+
+  const waitResult = await waitForBlePoweredOn({
+    logPrefix: "[Geofencing Task - Continuous]",
+  });
+
+  if (!waitResult.ready) {
+    console.warn(
+      "[Geofencing Task] Bluetooth not ready. Skipping continuous scan."
+    );
+    return;
+  }
+
+  console.log("[Geofencing Task] Starting continuous BLE scan...");
+  isContinuousScanActive = true;
+
+  const { RSSI_ENTER_THRESHOLD, RSSI_EXIT_THRESHOLD, RSSI_DEBOUNCE_TIME_MS } =
+    await import("../constants");
+
+  const normalizedServiceUUIDs = BLE_SERVICE_UUIDS.map((uuid) =>
+    uuid.toLowerCase()
+  );
+  const normalizedNamePrefixes = BLE_DEVICE_NAME_PREFIXES.map((prefix) =>
+    prefix.toLowerCase()
+  );
+
+  try {
+    bleManager.startDeviceScan(
+      BLE_SERVICE_UUIDS,
+      null,
+      async (scanError, device) => {
+        if (scanError) {
+          console.error("[Geofencing Task] Continuous scan error:", scanError);
+          return;
+        }
+
+        if (!device) return;
+
+        const serviceUUIDs = device.serviceUUIDs?.map((uuid) =>
+          uuid.toLowerCase()
+        );
+        const deviceName = device.name?.toLowerCase() ?? "";
+        const matchesService = serviceUUIDs
+          ? serviceUUIDs.some((uuid) => normalizedServiceUUIDs.includes(uuid))
+          : false;
+        const matchesName = normalizedNamePrefixes.some((prefix) =>
+          deviceName.startsWith(prefix)
+        );
+
+        if (!matchesService && !matchesName) {
+          return;
+        }
+
+        if (!device.rssi || typeof device.rssi !== "number") {
+          console.warn(
+            "[Geofencing Task] Device RSSI is null or invalid:",
+            device.id
+          );
+          return;
+        }
+
+        const currentState = await getAppState();
+        const timestamp = Date.now();
+
+        try {
+          await recordPresenceDetection(
+            {
+              deviceId: device.id,
+              deviceName: device.name ?? null,
+              rssi: device.rssi,
+            },
+            timestamp
+          );
+
+          // 強い RSSI → PRESENT (研究室内)
+          if (device.rssi > RSSI_ENTER_THRESHOLD) {
+            if (currentState !== "PRESENT") {
+              console.log(
+                `[Geofencing Task] Strong RSSI detected (${device.rssi} dBm). Transitioning to PRESENT.`
+              );
+              await setAppState("PRESENT");
+              await sendBleConnectedNotification(device.name);
+
+              const enterSentAt = await getPresenceEnterSentAt();
+              if (enterSentAt === null) {
+                await postAttendance(API_URL_ENTER, {
+                  deviceId: device.id,
+                  deviceName: device.name ?? null,
+                });
+                await setPresenceEnterSentAt(timestamp);
+              }
+            }
+            clearUnconfirmedTimer();
+          }
+          // 弱い RSSI → UNCONFIRMED (信号喪失)
+          else if (device.rssi <= RSSI_EXIT_THRESHOLD) {
+            if (currentState === "PRESENT") {
+              console.log(
+                `[Geofencing Task] Weak RSSI detected (${device.rssi} dBm). Transitioning to UNCONFIRMED.`
+              );
+              await setAppState("UNCONFIRMED");
+              await startUnconfirmedTimer(RSSI_DEBOUNCE_TIME_MS);
+            }
+          }
+        } catch (error) {
+          console.error(
+            "[Geofencing Task] Failed to handle continuous scan detection:",
+            error
+          );
+        }
+      }
+    );
+
+    console.log("[Geofencing Task] Continuous scan started successfully");
+  } catch (error) {
+    isContinuousScanActive = false;
+    console.error("[Geofencing Task] Failed to start continuous scan:", error);
+    throw error;
+  }
+};
+
+/**
+ * 常時 BLE スキャンを停止
+ */
+const stopContinuousBleScanner = async (): Promise<void> => {
+  if (!isContinuousScanActive) {
+    console.log("[Geofencing Task] Continuous scan not active. Skipping stop.");
+    return;
+  }
+
+  console.log("[Geofencing Task] Stopping continuous BLE scan...");
+
+  try {
+    bleManager.stopDeviceScan();
+    isContinuousScanActive = false;
+    clearUnconfirmedTimer();
+    console.log("[Geofencing Task] Continuous scan stopped successfully");
+  } catch (error) {
+    console.error("[Geofencing Task] Failed to stop continuous scan:", error);
   }
 };
 
@@ -556,17 +761,27 @@ TaskManager.defineTask(GEOFENCING_TASK_NAME, async ({ data, error }) => {
       });
     }
 
-    const detected = await tryDetectBeacon({
-      force: forceReconnect,
-      context: "geofence-enter",
-    });
+    // Android: 常時 BLE スキャンを開始
+    if (Platform.OS === "android") {
+      await startAndroidBleForegroundService("continuous-scan", {
+        title: "研究室ビーコンを監視しています",
+        body: "学内にいる間、バックグラウンドでビーコンを検出します",
+      });
+      await startContinuousBleScanner();
+    } else {
+      // iOS: 既存の定期スキャンを実行
+      const detected = await tryDetectBeacon({
+        force: forceReconnect,
+        context: "geofence-enter",
+      });
 
-    if (!detected) {
-      await safeSendDebugNotification(
-        "BLE Rapid Retry Scheduled",
-        `context=geofence-enter; force=${forceReconnect}`
-      );
-      await startRapidRetryWindow({ force: forceReconnect });
+      if (!detected) {
+        await safeSendDebugNotification(
+          "BLE Rapid Retry Scheduled",
+          `context=geofence-enter; force=${forceReconnect}`
+        );
+        await startRapidRetryWindow({ force: forceReconnect });
+      }
     }
   } else if (eventType === LocationGeofencingEventType.Exit) {
     console.log(
@@ -601,7 +816,9 @@ TaskManager.defineTask(GEOFENCING_TASK_NAME, async ({ data, error }) => {
       console.error("[Geofencing Task] BackgroundFetch stop failed", e);
     }
 
+    // Android: 常時スキャンとフォアグラウンドサービスを停止
     if (Platform.OS === "android") {
+      await stopContinuousBleScanner();
       await stopAndroidBleForegroundService("geofence-exit");
     }
   }

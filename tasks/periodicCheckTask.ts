@@ -315,6 +315,22 @@ const periodicTask = async (taskId: string) => {
   console.log("[BackgroundFetch] taskId:", taskId);
   await logAndroidBackgroundState("periodic-task", { taskId });
 
+  // Android: 常時スキャンが有効な場合はスキップ
+  if (Platform.OS === "android") {
+    const { isContinuousScanActive } = await import("./geofencingTask");
+    if (isContinuousScanActive) {
+      console.log(
+        `${LOG_PREFIX} Continuous scan active. Skipping periodic scan.`
+      );
+      await notifyAndroidDebug(
+        "Periodic scan skipped",
+        "continuous scan is active"
+      );
+      BackgroundFetch.finish(taskId);
+      return;
+    }
+  }
+
   const previousState = await getAppState();
   const rapidRetryWindowUntil = await getRapidRetryWindowUntil();
   const now = Date.now();

@@ -16,6 +16,29 @@ export const BLE_SERVICE_UUID = BLE_SERVICE_UUIDS[0];
 /** ビーコン名のプレフィックス（LINBLEシリーズなど） */
 export const BLE_DEVICE_NAME_PREFIXES = ["LINBLE"];
 
+// ----- RSSI Thresholds for Room Detection -----
+
+/**
+ * RSSI しきい値 - 研究室入室判定
+ * この値を超える RSSI を持つビーコンは「研究室内」と判定される
+ */
+export const RSSI_ENTER_THRESHOLD = -70; // dBm
+
+/**
+ * RSSI しきい値 - 研究室退室判定
+ * この値以下の RSSI を持つビーコンは「廊下」または「信号喪失」と判定される
+ * ヒステリシスとして RSSI_ENTER_THRESHOLD との差が 5 dBm
+ */
+export const RSSI_EXIT_THRESHOLD = -75; // dBm
+
+/**
+ * UNCONFIRMED 状態から INSIDE_AREA への遷移猶予期間（ミリ秒）
+ * 3分間 RSSI が弱い状態が続いた場合に INSIDE_AREA に遷移
+ */
+export const RSSI_DEBOUNCE_TIME_MS = 3 * 60 * 1000; // 3分
+
+// ---------------------------------
+
 /** 在室（入室）を記録するためのAPIエンドポイント */
 export const API_URL_ENTER = "https://www.kyutech-4lab.jp/api/attendance/enter";
 
