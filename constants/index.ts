@@ -12,7 +12,7 @@ export const BLE_SERVICE_UUIDS = [
 ];
 
 /** 後方互換用。優先するサービスUUID */
-export const BLE_SERVICE_UUID = BLE_SERVICE_UUIDS[2];
+export const BLE_SERVICE_UUID = BLE_SERVICE_UUIDS[0];
 
 /** ビーコン名のプレフィックス（LINBLEシリーズなど） */
 export const BLE_DEVICE_NAME_PREFIXES = ["LINBLE"];
