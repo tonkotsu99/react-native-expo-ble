@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useMemo } from "react";
-import type { Device } from "react-native-ble-plx";
+import type { BeaconDetection } from "./useBLE";
 import { useBLE } from "./useBLE";
 
 export type BLEContextValue = {
@@ -7,8 +7,7 @@ export type BLEContextValue = {
   startScan: () => Promise<void>;
   disconnectDevice: () => Promise<void>;
   refresh: () => Promise<void>;
-  connectedDevice: Device | null;
-  connectedRssi: number | null;
+  detectedBeacon: BeaconDetection | null;
 };
 
 const BLEContext = createContext<BLEContextValue | null>(null);
@@ -21,8 +20,7 @@ export const BLEProvider: React.FC<{ children: React.ReactNode }> = ({
     startScan,
     disconnectDevice,
     refresh,
-    connectedDevice,
-    connectedRssi,
+    detectedBeacon,
   } = useBLE();
 
   const value = useMemo<BLEContextValue>(
@@ -31,17 +29,9 @@ export const BLEProvider: React.FC<{ children: React.ReactNode }> = ({
       startScan,
       disconnectDevice,
       refresh,
-      connectedDevice,
-      connectedRssi,
+      detectedBeacon,
     }),
-    [
-      requestPermissions,
-      startScan,
-      disconnectDevice,
-      refresh,
-      connectedDevice,
-      connectedRssi,
-    ]
+    [requestPermissions, startScan, disconnectDevice, refresh, detectedBeacon]
   );
 
   return <BLEContext.Provider value={value}>{children}</BLEContext.Provider>;

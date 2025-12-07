@@ -116,16 +116,16 @@ const getConnectionMessage = (
 ): { title: string; description: string } => {
   const messages = {
     connected: {
-      title: "BLE接続中",
-      description: "デバイスに正常に接続されています",
+      title: "ビーコン検出中",
+      description: "研究室ビーコンの信号を受信しています",
     },
     disconnected: {
-      title: "BLE未接続",
-      description: "デバイスとの接続が切断されています",
+      title: "ビーコン未検出",
+      description: "近くでビーコン信号が見つかっていません",
     },
     scanning: {
       title: "スキャン中",
-      description: "近くのBLEデバイスを検索しています",
+      description: "ビーコン信号を探索しています",
     },
     disabled: {
       title: "Bluetooth無効",
@@ -378,9 +378,9 @@ export const ConnectionVisualization = React.forwardRef<
                 variant="outline"
                 icon={WifiOff}
                 onPress={onDisconnect}
-                accessibilityLabel="接続を切断"
+                accessibilityLabel="検出をクリア"
               >
-                切断
+                クリア
               </IconButton>
             )}
             {(status === "disconnected" || status === "error") &&
@@ -391,9 +391,9 @@ export const ConnectionVisualization = React.forwardRef<
                   icon={Wifi}
                   onPress={onReconnect}
                   disabled={isReconnecting}
-                  accessibilityLabel="再接続"
+                  accessibilityLabel="再検出"
                 >
-                  {isReconnecting ? "接続中..." : "再接続"}
+                  {isReconnecting ? "検出中..." : "再検出"}
                 </IconButton>
               )}
           </XStack>

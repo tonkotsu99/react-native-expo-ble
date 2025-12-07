@@ -138,19 +138,19 @@ const getRecommendedAction = (
   }
 
   if (bleStatus === "error") {
-    return "BLE接続を再試行してください";
+    return "ビーコン検出を再試行してください";
   }
 
   if (appState === "INSIDE_AREA" && bleStatus === "disconnected") {
-    return "BLEスキャンを開始して在室登録を行ってください";
+    return "ビーコンスキャンを開始して在室登録を行ってください";
   }
 
   if (appState === "PRESENT" && bleStatus === "disconnected") {
-    return "在室状態を維持するためBLE接続を確認してください";
+    return "在室状態を維持するためビーコン検出を確認してください";
   }
 
   if (appState === "UNCONFIRMED") {
-    return "位置情報とBLE接続を確認してください";
+    return "位置情報とビーコン検出を確認してください";
   }
 
   return null;

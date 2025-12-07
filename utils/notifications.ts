@@ -85,7 +85,7 @@ export async function sendBleConnectedNotification(
   deviceName?: string | null
 ): Promise<void> {
   const name = deviceName ?? "デバイス";
-  await scheduleNotification("研究室", `${name}に接続しました`);
+  await scheduleNotification("研究室", `${name}を検出しました`);
 }
 
 /**
@@ -95,7 +95,10 @@ export async function sendBleDisconnectedNotification(
   deviceName?: string | null
 ): Promise<void> {
   const name = deviceName ?? "デバイス";
-  await scheduleNotification("研究室", `${name}から切断されました`);
+  await scheduleNotification(
+    "研究室",
+    `${name}のビーコン信号を検出できなくなりました`
+  );
 }
 
 /**
@@ -175,7 +178,5 @@ export async function sendDebugNotification(
   title: string,
   body: string
 ): Promise<void> {
-  // 本番でのスパムを避けたい場合は __DEV__ ガードをかける
-  // ただし実運用の一時的な診断にも使えるよう、ガードは呼び出し側で制御可能にする
   await scheduleNotification(`[DEBUG] ${title}`, body);
 }

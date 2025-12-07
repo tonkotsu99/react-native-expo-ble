@@ -8,6 +8,7 @@ node_modules/
 dist/
 web-build/
 expo-env.d.ts
+kyutech-ble-fbe07d68e734.json
 
 # Native
 .kotlin/
