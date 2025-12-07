@@ -123,6 +123,10 @@ const clearRapidRetryTimers = () => {
   }
 };
 
+/**
+ * @deprecated iOS now uses continuous scan like Android.
+ * Rapid Retry window is no longer needed. Consider removing after iOS testing.
+ */
 const stopRapidRetryWindow = async (
   reason: string,
   options: { silent?: boolean } = {}
@@ -183,6 +187,10 @@ const startContinuousBleScanner = async (): Promise<void> => {
   }
 
   console.log("[Geofencing Task] Starting continuous BLE scan...");
+  await safeSendDebugNotification(
+    "Background Scan Started",
+    "Continuous scan started"
+  );
   isContinuousScanActive = true;
 
   const { RSSI_ENTER_THRESHOLD, RSSI_EXIT_THRESHOLD, RSSI_DEBOUNCE_TIME_MS } =
@@ -197,7 +205,7 @@ const startContinuousBleScanner = async (): Promise<void> => {
 
   try {
     bleManager.startDeviceScan(
-      BLE_SERVICE_UUIDS,
+      Platform.OS === "android" ? null : BLE_SERVICE_UUIDS,
       null,
       async (scanError, device) => {
         if (scanError) {
@@ -259,6 +267,10 @@ const startContinuousBleScanner = async (): Promise<void> => {
                   deviceName: device.name ?? null,
                 });
                 await setPresenceEnterSentAt(timestamp);
+                await safeSendDebugNotification(
+                  "Attendance Recorded",
+                  device.name ?? device.id
+                );
               }
             }
             clearUnconfirmedTimer();
@@ -341,6 +353,10 @@ const postAttendance = async (
 
 /**
  * バックグラウンドでBLEデバイスに接続を試みる関数
+ *
+ * @deprecated iOS now uses continuous scan like Android (startContinuousBleScanner).
+ * This function is kept for compatibility but is no longer used in ENTER event.
+ * Consider removing after verifying iOS continuous scan stability.
  */
 async function tryDetectBeacon(
   options: { force?: boolean; context?: string } = {}
@@ -602,6 +618,10 @@ async function tryDetectBeacon(
   });
 }
 
+/**
+ * @deprecated iOS now uses continuous scan like Android.
+ * Rapid Retry window is no longer needed. Consider removing after iOS testing.
+ */
 async function startRapidRetryWindow(
   options: { force?: boolean } = {}
 ): Promise<void> {
@@ -761,27 +781,30 @@ TaskManager.defineTask(GEOFENCING_TASK_NAME, async ({ data, error }) => {
       });
     }
 
-    // Android: 常時 BLE スキャンを開始
+    // Android: フォアグラウンドサービス付きで常時 BLE スキャンを開始
     if (Platform.OS === "android") {
       await startAndroidBleForegroundService("continuous-scan", {
         title: "研究室ビーコンを監視しています",
         body: "学内にいる間、バックグラウンドでビーコンを検出します",
       });
       await startContinuousBleScanner();
-    } else {
-      // iOS: 既存の定期スキャンを実行
-      const detected = await tryDetectBeacon({
-        force: forceReconnect,
-        context: "geofence-enter",
-      });
+    } else if (Platform.OS === "ios") {
+      // iOS: 連続スキャンを開始 (フォアグラウンドサービスなし、State Restoration のみ)
+      await startContinuousBleScanner();
 
-      if (!detected) {
-        await safeSendDebugNotification(
-          "BLE Rapid Retry Scheduled",
-          `context=geofence-enter; force=${forceReconnect}`
-        );
-        await startRapidRetryWindow({ force: forceReconnect });
-      }
+      // 以下は非推奨: iOS でも連続スキャンを使用するため
+      // const detected = await tryDetectBeacon({
+      //   force: forceReconnect,
+      //   context: "geofence-enter",
+      // });
+      //
+      // if (!detected) {
+      //   await safeSendDebugNotification(
+      //     "BLE Rapid Retry Scheduled",
+      //     `context=geofence-enter; force=${forceReconnect}`
+      //   );
+      //   await startRapidRetryWindow({ force: forceReconnect });
+      // }
     }
   } else if (eventType === LocationGeofencingEventType.Exit) {
     console.log(
@@ -816,10 +839,12 @@ TaskManager.defineTask(GEOFENCING_TASK_NAME, async ({ data, error }) => {
       console.error("[Geofencing Task] BackgroundFetch stop failed", e);
     }
 
-    // Android: 常時スキャンとフォアグラウンドサービスを停止
+    // 両 OS: 常時スキャンを停止
     if (Platform.OS === "android") {
       await stopContinuousBleScanner();
       await stopAndroidBleForegroundService("geofence-exit");
+    } else if (Platform.OS === "ios") {
+      await stopContinuousBleScanner();
     }
   }
 });

@@ -34,6 +34,7 @@ import {
 import {
   sendBleConnectedNotification,
   sendBleDisconnectedNotification,
+  sendDebugNotification,
 } from "../utils/notifications";
 import { postInsideAreaStatus } from "./insideAreaStatus";
 
@@ -176,6 +177,13 @@ const scanAndReconnect = async (): Promise<boolean> => {
     return false;
   }
 
+  if (DEBUG_BLE) {
+    await sendDebugNotification(
+      "Background Scan Started",
+      "Periodic scan started"
+    );
+  }
+
   return await new Promise((resolve) => {
     let settled = false;
 
@@ -213,7 +221,7 @@ const scanAndReconnect = async (): Promise<boolean> => {
 
     try {
       bleManager.startDeviceScan(
-        BLE_SERVICE_UUIDS,
+        Platform.OS === "android" ? null : BLE_SERVICE_UUIDS,
         null,
         async (error, device) => {
           if (settled) return;
@@ -272,6 +280,12 @@ const scanAndReconnect = async (): Promise<boolean> => {
                 deviceName: device.name ?? null,
               });
               await setPresenceEnterSentAt(timestamp);
+              if (DEBUG_BLE) {
+                await sendDebugNotification(
+                  "Attendance Recorded",
+                  device.name ?? device.id
+                );
+              }
             }
 
             if (Platform.OS === "android") {

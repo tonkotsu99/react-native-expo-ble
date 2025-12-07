@@ -6,12 +6,13 @@
  * - 0x180A: 現在のLINBLE端末が公開するDevice Information Service
  */
 export const BLE_SERVICE_UUIDS = [
-  "0000180d-0000-1000-8000-00805f9b34fb",
-  "0000180a-0000-1000-8000-00805f9b34fb",
+  // "0000180d-0000-1000-8000-00805f9b34fb",
+  // "0000180a-0000-1000-8000-00805f9b34fb",
+  "27adc9ca-35eb-465a-9154-b8ff9076f3e8",
 ];
 
 /** 後方互換用。優先するサービスUUID */
-export const BLE_SERVICE_UUID = BLE_SERVICE_UUIDS[0];
+export const BLE_SERVICE_UUID = BLE_SERVICE_UUIDS[2];
 
 /** ビーコン名のプレフィックス（LINBLEシリーズなど） */
 export const BLE_DEVICE_NAME_PREFIXES = ["LINBLE"];

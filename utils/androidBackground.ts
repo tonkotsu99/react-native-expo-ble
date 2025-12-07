@@ -20,7 +20,7 @@ const loadIntentLauncher = async (): Promise<IntentLauncherModule | null> => {
     cachedIntentLauncher = module;
     return module;
   } catch (error) {
-    console.warn("[AndroidBackground] expo-intent-launcher unavailable", {
+    console.warn("[Android Background] expo-intent-launcher unavailable", {
       error,
     });
     cachedIntentLauncher = null;
@@ -79,7 +79,7 @@ const ensureForegroundChannelAsync = async (): Promise<void> => {
       showBadge: false,
     });
   } catch (error) {
-    console.warn("[AndroidBackground] Failed to ensure notification channel", {
+    console.warn("[Android Background] Failed to ensure notification channel", {
       error,
     });
   }
@@ -101,7 +101,7 @@ const cancelForegroundNotificationAsync = async (
     }
   } catch (error) {
     console.warn(
-      "[AndroidBackground] Failed to cancel foreground notification",
+      "[Android Background] Failed to cancel foreground notification",
       {
         error,
         reason,
@@ -117,7 +117,7 @@ export const notifyAndroidDebug = async (
   title: string,
   body: string
 ): Promise<void> => {
-  const prepared = `[Android BG] ${title}`;
+  const prepared = `[Android Background] ${title}`;
   console.log(`${prepared}: ${body}`);
   if (!DEBUG_BLE) {
     return;
@@ -125,7 +125,7 @@ export const notifyAndroidDebug = async (
   try {
     await sendDebugNotification(prepared, body);
   } catch (error) {
-    console.warn("[AndroidBackground] Failed to send debug notification", {
+    console.warn("[Android Background] Failed to send debug notification", {
       error,
       title,
     });
@@ -148,12 +148,12 @@ export const logAndroidBackgroundState = async (
       foregroundReason: foregroundActiveReason,
       ...extra,
     };
-    console.log(`[AndroidBackground] ${context}`, message);
+    console.log(`[Android Background] ${context}`, message);
     if (DEBUG_BLE) {
       await notifyAndroidDebug(`State: ${context}`, JSON.stringify(message));
     }
   } catch (error) {
-    console.warn("[AndroidBackground] Failed to log background state", {
+    console.warn("[Android Background] Failed to log background state", {
       context,
       error,
       extra,
@@ -205,7 +205,7 @@ export const startAndroidBleForegroundService = async (
     foregroundNotificationId = null;
     foregroundActiveReason = null;
     console.warn(
-      "[AndroidBackground] Failed to start foreground notification",
+      "[Android Background] Failed to start foreground notification",
       {
         error,
         reason,
@@ -289,7 +289,7 @@ const requestPostNotificationsAsync = async (
     }
     return { granted, requested: true };
   } catch (error) {
-    console.warn("[AndroidBackground] Failed to request notifications", {
+    console.warn("[Android Background] Failed to request notifications", {
       error,
       reason,
     });
@@ -336,7 +336,7 @@ const maybePromptBatteryOptimizationAsync = async (
       } catch (launchError) {
         const message = String((launchError as Error)?.message ?? launchError);
         console.warn(
-          "[AndroidBackground] Failed to launch battery optimization intent",
+          "[Android Background] Failed to launch battery optimization intent",
           {
             launchError,
             reason,
@@ -364,7 +364,7 @@ const maybePromptBatteryOptimizationAsync = async (
       return { ok: false, prompted: true, status };
     } catch (linkError) {
       console.warn(
-        "[AndroidBackground] Failed to open battery optimization settings",
+        "[Android Background] Failed to open battery optimization settings",
         {
           linkError,
           reason,
@@ -373,10 +373,13 @@ const maybePromptBatteryOptimizationAsync = async (
       return { ok: false, prompted: false, status };
     }
   } catch (error) {
-    console.warn("[AndroidBackground] Failed to check BackgroundFetch status", {
-      error,
-      reason,
-    });
+    console.warn(
+      "[Android Background] Failed to check BackgroundFetch status",
+      {
+        error,
+        reason,
+      }
+    );
     return { ok: false, prompted: false, status: null };
   }
 };
