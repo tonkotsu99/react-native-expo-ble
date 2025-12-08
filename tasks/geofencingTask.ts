@@ -3,7 +3,7 @@ import {
   type LocationRegion,
 } from "expo-location";
 import * as TaskManager from "expo-task-manager";
-import { Platform } from "react-native";
+import { AppState, Platform } from "react-native";
 import BackgroundFetch from "react-native-background-fetch";
 import { bleManager } from "../bluetooth/bleManagerInstance";
 import {
@@ -55,6 +55,27 @@ let backgroundScanInFlight = false;
 // ----- Continuous BLE Scan State -----
 export let isContinuousScanActive = false;
 let unconfirmedTimer: ReturnType<typeof setTimeout> | null = null;
+let lastDetectionTime = 0;
+let watchdogInterval: ReturnType<typeof setInterval> | null = null;
+const WATCHDOG_INTERVAL_MS = 10000; // 10秒ごとにチェック
+const DETECTION_TIMEOUT_MS = 180000; // 3分間検知がなければ切断とみなす
+
+// RSSI Smoothing
+const rssiHistory = new Map<string, number[]>();
+const RSSI_SMOOTHING_WINDOW = 5;
+
+const getSmoothedRssi = (deviceId: string, rssi: number): number => {
+  if (!rssiHistory.has(deviceId)) {
+    rssiHistory.set(deviceId, []);
+  }
+  const history = rssiHistory.get(deviceId)!;
+  history.push(rssi);
+  if (history.length > RSSI_SMOOTHING_WINDOW) {
+    history.shift();
+  }
+  const sum = history.reduce((a, b) => a + b, 0);
+  return sum / history.length;
+};
 
 /**
  * UNCONFIRMED タイマーをクリア
@@ -64,6 +85,59 @@ export const clearUnconfirmedTimer = (): void => {
     clearTimeout(unconfirmedTimer);
     unconfirmedTimer = null;
     console.log("[Geofencing Task] Unconfirmed timer cleared");
+  }
+};
+
+/**
+ * 監視用ウォッチドッグタイマーを開始
+ */
+const startWatchdog = () => {
+  if (watchdogInterval) clearInterval(watchdogInterval);
+
+  console.log("[Geofencing Task] Starting watchdog timer");
+  watchdogInterval = setInterval(async () => {
+    if (!isContinuousScanActive) {
+      stopWatchdog();
+      return;
+    }
+
+    const now = Date.now();
+
+    // iOSバックグラウンド時はタイムアウト判定をスキップ
+    // (OS仕様によりバックグラウンドではRSSI更新が止まるため、誤切断を防ぐ)
+    if (Platform.OS === "ios" && AppState.currentState !== "active") {
+      return;
+    }
+
+    if (
+      lastDetectionTime > 0 &&
+      now - lastDetectionTime > DETECTION_TIMEOUT_MS
+    ) {
+      const currentState = await getAppState();
+      if (currentState === "PRESENT" || currentState === "UNCONFIRMED") {
+        console.log(
+          `[Geofencing Task] No beacon detected for ${DETECTION_TIMEOUT_MS}ms. Forcing state to INSIDE_AREA.`
+        );
+        await setAppState("INSIDE_AREA");
+
+        const { sendBleDisconnectedNotification } = await import(
+          "../utils/notifications"
+        );
+        await sendBleDisconnectedNotification(null);
+
+        // リセット
+        lastDetectionTime = 0;
+        clearUnconfirmedTimer();
+      }
+    }
+  }, WATCHDOG_INTERVAL_MS);
+};
+
+const stopWatchdog = () => {
+  if (watchdogInterval) {
+    clearInterval(watchdogInterval);
+    watchdogInterval = null;
+    console.log("[Geofencing Task] Watchdog timer stopped");
   }
 };
 
@@ -192,6 +266,7 @@ const startContinuousBleScanner = async (): Promise<void> => {
     "Continuous scan started"
   );
   isContinuousScanActive = true;
+  startWatchdog();
 
   const { RSSI_ENTER_THRESHOLD, RSSI_EXIT_THRESHOLD, RSSI_DEBOUNCE_TIME_MS } =
     await import("../constants");
@@ -203,10 +278,15 @@ const startContinuousBleScanner = async (): Promise<void> => {
     prefix.toLowerCase()
   );
 
+  // iOSの場合は特定のUUIDのみを指定してOSに監視を委任する
+  // (0x180Aなどは無視し、研究室ビーコンのUUIDのみを対象とする)
+  const scanUUIDs =
+    Platform.OS === "android" ? null : ["0000180a-0000-1000-8000-00805f9b34fb"];
+
   try {
     bleManager.startDeviceScan(
-      Platform.OS === "android" ? null : BLE_SERVICE_UUIDS,
-      null,
+      scanUUIDs,
+      { allowDuplicates: true },
       async (scanError, device) => {
         if (scanError) {
           console.error("[Geofencing Task] Continuous scan error:", scanError);
@@ -226,9 +306,23 @@ const startContinuousBleScanner = async (): Promise<void> => {
           deviceName.startsWith(prefix)
         );
 
+        // Debug: Check if target UUID is detected
+        if (
+          serviceUUIDs &&
+          serviceUUIDs.includes("0000180a-0000-1000-8000-00805f9b34fb")
+        ) {
+          console.log(
+            `[Geofencing Task] Target UUID found in device: ${
+              deviceName || device.id
+            }`
+          );
+        }
+
         if (!matchesService && !matchesName) {
           return;
         }
+
+        lastDetectionTime = Date.now();
 
         if (!device.rssi || typeof device.rssi !== "number") {
           console.warn(
@@ -241,21 +335,37 @@ const startContinuousBleScanner = async (): Promise<void> => {
         const currentState = await getAppState();
         const timestamp = Date.now();
 
+        // RSSI Smoothing
+        const smoothedRssi = getSmoothedRssi(device.id, device.rssi);
+
+        // Debug log for RSSI updates (throttled to avoid excessive logs)
+        if (Math.random() < 0.2) {
+          console.log(
+            `[Geofencing Task] Scan update: ${device.name || "Unknown"} RSSI: ${
+              device.rssi
+            } (Smoothed: ${smoothedRssi.toFixed(1)})`
+          );
+        }
+
         try {
           await recordPresenceDetection(
             {
               deviceId: device.id,
               deviceName: device.name ?? null,
-              rssi: device.rssi,
+              rssi: device.rssi, // Record raw RSSI for debugging
             },
             timestamp
           );
 
           // 強い RSSI → PRESENT (研究室内)
-          if (device.rssi > RSSI_ENTER_THRESHOLD) {
+          if (smoothedRssi > RSSI_ENTER_THRESHOLD) {
             if (currentState !== "PRESENT") {
               console.log(
-                `[Geofencing Task] Strong RSSI detected (${device.rssi} dBm). Transitioning to PRESENT.`
+                `[Geofencing Task] Strong RSSI detected (Raw: ${
+                  device.rssi
+                }, Smoothed: ${smoothedRssi.toFixed(
+                  1
+                )} dBm). Transitioning to PRESENT.`
               );
               await setAppState("PRESENT");
               await sendBleConnectedNotification(device.name);
@@ -276,10 +386,14 @@ const startContinuousBleScanner = async (): Promise<void> => {
             clearUnconfirmedTimer();
           }
           // 弱い RSSI → UNCONFIRMED (信号喪失)
-          else if (device.rssi <= RSSI_EXIT_THRESHOLD) {
+          else if (smoothedRssi <= RSSI_EXIT_THRESHOLD) {
             if (currentState === "PRESENT") {
               console.log(
-                `[Geofencing Task] Weak RSSI detected (${device.rssi} dBm). Transitioning to UNCONFIRMED.`
+                `[Geofencing Task] Weak RSSI detected (Raw: ${
+                  device.rssi
+                }, Smoothed: ${smoothedRssi.toFixed(
+                  1
+                )} dBm). Transitioning to UNCONFIRMED.`
               );
               await setAppState("UNCONFIRMED");
               await startUnconfirmedTimer(RSSI_DEBOUNCE_TIME_MS);
@@ -297,6 +411,7 @@ const startContinuousBleScanner = async (): Promise<void> => {
     console.log("[Geofencing Task] Continuous scan started successfully");
   } catch (error) {
     isContinuousScanActive = false;
+    stopWatchdog();
     console.error("[Geofencing Task] Failed to start continuous scan:", error);
     throw error;
   }
@@ -316,7 +431,9 @@ const stopContinuousBleScanner = async (): Promise<void> => {
   try {
     bleManager.stopDeviceScan();
     isContinuousScanActive = false;
+    stopWatchdog();
     clearUnconfirmedTimer();
+    rssiHistory.clear();
     console.log("[Geofencing Task] Continuous scan stopped successfully");
   } catch (error) {
     console.error("[Geofencing Task] Failed to stop continuous scan:", error);
@@ -734,6 +851,19 @@ TaskManager.defineTask(GEOFENCING_TASK_NAME, async ({ data, error }) => {
       previousState,
     });
 
+    // Android: フォアグラウンドサービス付きで常時 BLE スキャンを開始
+    // ネットワーク通信(postInsideAreaStatus)の前に実行して、プロセスがキルされるのを防ぐ
+    if (Platform.OS === "android") {
+      await startAndroidBleForegroundService("continuous-scan", {
+        title: "研究室ビーコンを監視しています",
+        body: "学内にいる間、バックグラウンドでビーコンを検出します",
+      });
+      await startContinuousBleScanner();
+    } else if (Platform.OS === "ios") {
+      // iOS: 連続スキャンを開始
+      await startContinuousBleScanner();
+    }
+
     const alreadyReported = await getInsideAreaReportStatus();
     if (previousState === "INSIDE_AREA" && alreadyReported) {
       console.log(
@@ -779,32 +909,6 @@ TaskManager.defineTask(GEOFENCING_TASK_NAME, async ({ data, error }) => {
       await logAndroidBackgroundState("background-fetch-start", {
         reason: "geofence-enter-skip",
       });
-    }
-
-    // Android: フォアグラウンドサービス付きで常時 BLE スキャンを開始
-    if (Platform.OS === "android") {
-      await startAndroidBleForegroundService("continuous-scan", {
-        title: "研究室ビーコンを監視しています",
-        body: "学内にいる間、バックグラウンドでビーコンを検出します",
-      });
-      await startContinuousBleScanner();
-    } else if (Platform.OS === "ios") {
-      // iOS: 連続スキャンを開始 (フォアグラウンドサービスなし、State Restoration のみ)
-      await startContinuousBleScanner();
-
-      // 以下は非推奨: iOS でも連続スキャンを使用するため
-      // const detected = await tryDetectBeacon({
-      //   force: forceReconnect,
-      //   context: "geofence-enter",
-      // });
-      //
-      // if (!detected) {
-      //   await safeSendDebugNotification(
-      //     "BLE Rapid Retry Scheduled",
-      //     `context=geofence-enter; force=${forceReconnect}`
-      //   );
-      //   await startRapidRetryWindow({ force: forceReconnect });
-      // }
     }
   } else if (eventType === LocationGeofencingEventType.Exit) {
     console.log(

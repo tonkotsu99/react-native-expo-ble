@@ -6,13 +6,12 @@
  * - 0x180A: 現在のLINBLE端末が公開するDevice Information Service
  */
 export const BLE_SERVICE_UUIDS = [
-  // "0000180d-0000-1000-8000-00805f9b34fb",
-  // "0000180a-0000-1000-8000-00805f9b34fb",
-  "27adc9ca-35eb-465a-9154-b8ff9076f3e8",
+  "0000180d-0000-1000-8000-00805f9b34fb",
+  "0000180a-0000-1000-8000-00805f9b34fb",
 ];
 
 /** 後方互換用。優先するサービスUUID */
-export const BLE_SERVICE_UUID = BLE_SERVICE_UUIDS[0];
+export const BLE_SERVICE_UUID = BLE_SERVICE_UUIDS[1];
 
 /** ビーコン名のプレフィックス（LINBLEシリーズなど） */
 export const BLE_DEVICE_NAME_PREFIXES = ["LINBLE"];
@@ -30,7 +29,7 @@ export const RSSI_ENTER_THRESHOLD = -70; // dBm
  * この値以下の RSSI を持つビーコンは「廊下」または「信号喪失」と判定される
  * ヒステリシスとして RSSI_ENTER_THRESHOLD との差が 5 dBm
  */
-export const RSSI_EXIT_THRESHOLD = -75; // dBm
+export const RSSI_EXIT_THRESHOLD = -90; // dBm
 
 /**
  * UNCONFIRMED 状態から INSIDE_AREA への遷移猶予期間（ミリ秒）
@@ -53,4 +52,4 @@ export const API_URL_INSIDE_AREA =
 // ---------------------------------
 
 // Debug flags
-export const DEBUG_BLE = false; // set to false to silence debug notifications
+export const DEBUG_BLE = true; // set to false to silence debug notifications

@@ -46,6 +46,7 @@ interface UseBLE {
 const postEnterAttendance = async (payload: {
   deviceId: string;
   deviceName: string | null;
+  serviceUUIDs?: string[] | null;
 }): Promise<void> => {
   try {
     const userId = await getUserId();
@@ -215,6 +216,7 @@ export const useBLE = (): UseBLE => {
       await postEnterAttendance({
         deviceId: detectionPayload.deviceId,
         deviceName: detectionPayload.deviceName,
+        serviceUUIDs: device.serviceUUIDs,
       });
       await setPresenceEnterSentAt(timestamp);
     }
