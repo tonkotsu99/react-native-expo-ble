@@ -1,3 +1,4 @@
+import { getAppState, setAppState } from "@/state/appState";
 import { ensureAndroidBackgroundCapabilities } from "@/utils/androidBackground";
 import * as Location from "expo-location";
 import { useEffect } from "react";
@@ -5,6 +6,83 @@ import { Platform } from "react-native";
 import "../tasks/geofencingTask"; // タスク定義ファイルをインポートして登録
 
 const GEOFENCING_TASK_NAME = "background-geofencing-task";
+
+// ジオフェンス中心座標
+const GEOFENCE_CENTER = {
+  latitude: 33.8935,
+  longitude: 130.8412,
+  radius: 200, // メートル
+};
+
+/**
+ * 2点間の距離を計算（メートル）
+ */
+const calculateDistance = (
+  lat1: number,
+  lng1: number,
+  lat2: number,
+  lng2: number
+): number => {
+  const R = 6371000; // 地球の半径（メートル）
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLng = ((lng2 - lng1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos((lat1 * Math.PI) / 180) *
+      Math.cos((lat2 * Math.PI) / 180) *
+      Math.sin(dLng / 2) *
+      Math.sin(dLng / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+};
+
+/**
+ * 現在位置がジオフェンス内かどうかをチェック
+ */
+const checkInitialLocation = async (): Promise<void> => {
+  try {
+    const currentState = await getAppState();
+
+    // 既に INSIDE_AREA または PRESENT の場合はスキップ
+    if (currentState === "INSIDE_AREA" || currentState === "PRESENT") {
+      console.log("[Geofencing] Initial check skipped: already inside area");
+      return;
+    }
+
+    const location = await Location.getCurrentPositionAsync({
+      accuracy: Location.Accuracy.Balanced,
+      timeInterval: 5000,
+    });
+
+    const distance = calculateDistance(
+      location.coords.latitude,
+      location.coords.longitude,
+      GEOFENCE_CENTER.latitude,
+      GEOFENCE_CENTER.longitude
+    );
+
+    console.log(
+      `[Geofencing] Initial location check: distance=${distance.toFixed(
+        0
+      )}m, radius=${GEOFENCE_CENTER.radius}m`
+    );
+
+    if (distance <= GEOFENCE_CENTER.radius) {
+      console.log(
+        "[Geofencing] Inside geofence at startup, setting state to INSIDE_AREA"
+      );
+      await setAppState("INSIDE_AREA");
+    } else if (currentState === "UNCONFIRMED") {
+      // UNCONFIRMED 状態でジオフェンス外なら OUTSIDE に修正
+      console.log(
+        "[Geofencing] Outside geofence at startup, fixing UNCONFIRMED to OUTSIDE"
+      );
+      await setAppState("OUTSIDE");
+    }
+  } catch (error) {
+    console.warn("[Geofencing] Failed to check initial location:", error);
+  }
+};
 
 /**
  * ジオフェンシングのセットアップを行うカスタムフック。
@@ -45,11 +123,12 @@ export const useGeofencing = () => {
         identifier: "office-kyutech",
         latitude: 33.8935, // 九州工業大学の緯度
         longitude: 130.8412, // 九州工業大学の経度
-        radius: 100, // 半径を100m
+        radius: 200, // 半径を200m (Android精度向上のため100mから増加)
+        notifyOnEnter: true, // 明示的に入場検知を有効化
         notifyOnExit: true,
       },
     ]);
-    console.log("Geofencing started with increased radius: 450m");
+    console.log("Geofencing started with radius: 200m");
   };
 
   useEffect(() => {
@@ -63,6 +142,9 @@ export const useGeofencing = () => {
           });
         }
         await startGeofencing();
+
+        // アプリ起動時に現在位置をチェックして状態を補正
+        await checkInitialLocation();
       } else {
         console.error(
           "位置情報へのバックグラウンドアクセスが許可されていません"

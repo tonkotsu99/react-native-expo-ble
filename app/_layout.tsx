@@ -5,6 +5,8 @@ import {
   configureNotifications,
   requestNotificationPermissions,
 } from "@/utils/notifications";
+// Android Headless タスク登録のため import（副作用）
+import "@/tasks/periodicCheckTask";
 import { Slot } from "expo-router";
 import { useEffect } from "react";
 import { StatusBar } from "react-native";

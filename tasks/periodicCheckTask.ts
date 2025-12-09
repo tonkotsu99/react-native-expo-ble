@@ -331,7 +331,9 @@ const periodicTask = async (taskId: string) => {
 
   // Android: 常時スキャンが有効な場合はスキップ
   if (Platform.OS === "android") {
-    const { isContinuousScanActive } = await import("./geofencingTask");
+    const { isContinuousScanActive } = await import(
+      "../bluetooth/continuousScan"
+    );
     if (isContinuousScanActive) {
       console.log(
         `${LOG_PREFIX} Continuous scan active. Skipping periodic scan.`
@@ -459,16 +461,28 @@ const periodicTask = async (taskId: string) => {
   BackgroundFetch.finish(taskId);
 };
 
-/** タスクの初期化と設定 */
+/**
+ * タスクの初期化と設定
+ *
+ * 注意事項:
+ * - iOS: minimumFetchInterval は目安であり、OS がアプリの使用パターンに基づいて
+ *   実際の間隔を動的に調整します。数時間おきになる場合もあります。
+ * - iOS: アプリが長期間使用されないと、イベント頻度がさらに低下します。
+ * - Android: forceAlarmManager: true により、JobScheduler よりも正確なタイミングで
+ *   実行されますが、バッテリー消費が増加します。
+ */
 export const initPeriodicTask = async () => {
   await BackgroundFetch.configure(
     {
-      minimumFetchInterval: 15, // 実行間隔（分）
-      stopOnTerminate: false,
-      startOnBoot: true,
-      enableHeadless: true,
-      forceAlarmManager: true,
+      minimumFetchInterval: 15, // 最小実行間隔（分）- iOS/Android共に15分が最小
+      stopOnTerminate: false, // アプリ終了後も継続（Android のみ有効）
+      startOnBoot: true, // デバイス再起動後に開始（Android のみ有効）
+      enableHeadless: true, // HeadlessJS を有効化（Android のみ有効）
+      forceAlarmManager: true, // AlarmManager を使用して精度向上（Android のみ有効）
       requiredNetworkType: BackgroundFetch.NETWORK_TYPE_ANY,
+      requiresBatteryNotLow: false, // バッテリー残量が少なくても実行
+      requiresCharging: false, // 充電中でなくても実行
+      requiresDeviceIdle: false, // デバイスがアイドル状態でなくても実行
     },
     periodicTask,
     (taskId: string) => {
@@ -476,4 +490,60 @@ export const initPeriodicTask = async () => {
       BackgroundFetch.finish(taskId);
     }
   );
+
+  // Android: より頻繁なチェックのためにカスタムタスクをスケジュール
+  if (Platform.OS === "android") {
+    try {
+      await BackgroundFetch.scheduleTask({
+        taskId: "com.reactnativeexpoble.periodic-ble-check",
+        delay: 5 * 60 * 1000, // 5分後に最初の実行
+        periodic: true,
+        forceAlarmManager: true,
+        enableHeadless: true,
+        stopOnTerminate: false,
+        startOnBoot: true,
+      });
+      console.log(
+        "[Periodic Check] Scheduled custom periodic task for Android"
+      );
+    } catch (error) {
+      console.warn("[Periodic Check] Failed to schedule custom task:", error);
+    }
+  }
 };
+
+/**
+ * Android Headless タスクのハンドラ
+ * アプリが終了している状態（プロセス殺害後やデバイス再起動後）でも
+ * BackgroundFetch イベントが発火したときに呼び出される。
+ */
+const headlessTask = async (event: { taskId: string; timeout: boolean }) => {
+  const { taskId, timeout } = event;
+
+  if (timeout) {
+    console.error("[BackgroundFetch Headless] TIMEOUT:", taskId);
+    BackgroundFetch.finish(taskId);
+    return;
+  }
+
+  console.log("[BackgroundFetch Headless] Received event:", taskId);
+
+  try {
+    // periodicTask と同じ処理を実行
+    await periodicTask(taskId);
+  } catch (error) {
+    console.error("[BackgroundFetch Headless] Task failed:", error);
+    BackgroundFetch.finish(taskId);
+  }
+};
+
+/**
+ * Android Headless タスクを登録する。
+ * アプリのエントリーポイント（index.js など）で呼び出す必要がある。
+ * React コンポーネントのマウント前に実行されるため、
+ * このファイルを import するだけで自動的に登録される。
+ */
+if (Platform.OS === "android") {
+  BackgroundFetch.registerHeadlessTask(headlessTask);
+  console.log("[Periodic Check] Registered Android headless task");
+}

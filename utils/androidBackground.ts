@@ -2,6 +2,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import Constants from "expo-constants";
 import * as Notifications from "expo-notifications";
 import { Linking, Platform } from "react-native";
+import BackgroundService from "react-native-background-actions";
 import BackgroundFetch from "react-native-background-fetch";
 import { DEBUG_BLE } from "../constants";
 import { sendDebugNotification } from "./notifications";
@@ -28,12 +29,25 @@ const loadIntentLauncher = async (): Promise<IntentLauncherModule | null> => {
   }
 };
 
-const FOREGROUND_CHANNEL_ID = "ble-background-maintenance";
 const BATTERY_PROMPT_KEY = "android_battery_prompt_v1";
 const NOTIFICATION_PROMPT_KEY = "android_post_notifications_prompt_v1";
 
-let foregroundNotificationId: string | null = null;
 let foregroundActiveReason: string | null = null;
+let foregroundServiceRunning = false;
+
+// 無限ループタスク（フォアグラウンドサービスを維持するためのダミータスク）
+// 実際のBLEスキャンは別のモジュールで行われる
+const foregroundTask = async (): Promise<void> => {
+  await new Promise<void>((resolve) => {
+    // サービスが停止されるまで待機
+    const checkInterval = setInterval(() => {
+      if (!BackgroundService.isRunning()) {
+        clearInterval(checkInterval);
+        resolve();
+      }
+    }, 1000);
+  });
+};
 
 const getAndroidSdkVersion = (): number => {
   if (typeof Platform.Version === "number") {
@@ -53,63 +67,6 @@ const backgroundFetchStatusLabel = (status: number): string => {
       return "RESTRICTED";
     default:
       return `UNKNOWN(${status})`;
-  }
-};
-
-const ensureForegroundChannelAsync = async (): Promise<void> => {
-  if (Platform.OS !== "android") return;
-
-  try {
-    const channel = await Notifications.getNotificationChannelAsync(
-      FOREGROUND_CHANNEL_ID
-    );
-
-    if (channel) {
-      return;
-    }
-
-    await Notifications.setNotificationChannelAsync(FOREGROUND_CHANNEL_ID, {
-      name: "在室監視サービス",
-      importance: Notifications.AndroidImportance.MAX,
-      lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
-      sound: undefined,
-      vibrationPattern: [0],
-      enableLights: false,
-      enableVibrate: false,
-      showBadge: false,
-    });
-  } catch (error) {
-    console.warn("[Android Background] Failed to ensure notification channel", {
-      error,
-    });
-  }
-};
-
-const cancelForegroundNotificationAsync = async (
-  reason: string
-): Promise<void> => {
-  if (Platform.OS !== "android") {
-    return;
-  }
-
-  try {
-    if (foregroundNotificationId) {
-      await Notifications.cancelScheduledNotificationAsync(
-        foregroundNotificationId
-      );
-      await Notifications.dismissNotificationAsync(foregroundNotificationId);
-    }
-  } catch (error) {
-    console.warn(
-      "[Android Background] Failed to cancel foreground notification",
-      {
-        error,
-        reason,
-      }
-    );
-  } finally {
-    foregroundNotificationId = null;
-    foregroundActiveReason = null;
   }
 };
 
@@ -144,7 +101,7 @@ export const logAndroidBackgroundState = async (
     const status = await BackgroundFetch.status();
     const message = {
       status: backgroundFetchStatusLabel(status),
-      foregroundActive: Boolean(foregroundNotificationId),
+      foregroundServiceRunning: BackgroundService.isRunning(),
       foregroundReason: foregroundActiveReason,
       ...extra,
     };
@@ -174,7 +131,14 @@ export const startAndroidBleForegroundService = async (
     return;
   }
 
-  await ensureForegroundChannelAsync();
+  // 既に実行中の場合はスキップ
+  if (foregroundServiceRunning && BackgroundService.isRunning()) {
+    await notifyAndroidDebug(
+      "Foreground service already running",
+      `reason=${reason}; skipping start`
+    );
+    return;
+  }
 
   const title = content.title ?? "研究室ビーコンの接続を監視しています";
   const body =
@@ -182,34 +146,43 @@ export const startAndroidBleForegroundService = async (
     "在室状況を自動で更新するため、バックグラウンドでBluetoothデバイスを探索しています";
 
   try {
-    if (foregroundNotificationId) {
-      await cancelForegroundNotificationAsync("restart");
+    // 既存のサービスがあれば停止
+    if (BackgroundService.isRunning()) {
+      await BackgroundService.stop();
     }
 
-    const trigger = { channelId: FOREGROUND_CHANNEL_ID } as const;
-
-    foregroundNotificationId = await Notifications.scheduleNotificationAsync({
-      content: {
-        title,
-        body,
-        sticky: true,
-        color: "#0A84FF",
-        autoDismiss: false,
-        sound: false,
+    const options = {
+      taskName: "BLE_FOREGROUND_SCAN",
+      taskTitle: title,
+      taskDesc: body,
+      taskIcon: {
+        name: "ic_launcher",
+        type: "mipmap",
       },
-      trigger,
-    });
-    foregroundActiveReason = reason;
-    await notifyAndroidDebug("Foreground service started", `reason=${reason}`);
-  } catch (error) {
-    foregroundNotificationId = null;
-    foregroundActiveReason = null;
-    console.warn(
-      "[Android Background] Failed to start foreground notification",
-      {
-        error,
+      color: "#0A84FF",
+      parameters: {
         reason,
-      }
+      },
+    };
+
+    await BackgroundService.start(foregroundTask, options);
+    foregroundServiceRunning = true;
+    foregroundActiveReason = reason;
+    await notifyAndroidDebug(
+      "Foreground service started",
+      `reason=${reason}; taskName=${options.taskName}`
+    );
+  } catch (error) {
+    foregroundServiceRunning = false;
+    foregroundActiveReason = null;
+    const message = String((error as Error)?.message ?? error);
+    console.warn("[Android Background] Failed to start foreground service", {
+      error,
+      reason,
+    });
+    await notifyAndroidDebug(
+      "Foreground service start failed",
+      `reason=${reason}; error=${message}`
     );
   }
 };
@@ -221,8 +194,69 @@ export const stopAndroidBleForegroundService = async (
     return;
   }
 
-  await cancelForegroundNotificationAsync(reason);
-  await notifyAndroidDebug("Foreground service stopped", `reason=${reason}`);
+  try {
+    if (BackgroundService.isRunning()) {
+      await BackgroundService.stop();
+      foregroundServiceRunning = false;
+      foregroundActiveReason = null;
+      await notifyAndroidDebug(
+        "Foreground service stopped",
+        `reason=${reason}`
+      );
+    } else {
+      await notifyAndroidDebug(
+        "Foreground service not running",
+        `reason=${reason}; nothing to stop`
+      );
+    }
+  } catch (error) {
+    const message = String((error as Error)?.message ?? error);
+    console.warn("[Android Background] Failed to stop foreground service", {
+      error,
+      reason,
+    });
+    await notifyAndroidDebug(
+      "Foreground service stop failed",
+      `reason=${reason}; error=${message}`
+    );
+  }
+};
+
+/**
+ * フォアグラウンドサービスの通知を更新
+ */
+export const updateAndroidForegroundNotification = async (
+  content: ForegroundContent
+): Promise<void> => {
+  if (Platform.OS !== "android") {
+    return;
+  }
+
+  if (!BackgroundService.isRunning()) {
+    console.warn(
+      "[Android Background] Cannot update notification: service not running"
+    );
+    return;
+  }
+
+  try {
+    await BackgroundService.updateNotification({
+      taskTitle: content.title,
+      taskDesc: content.body,
+    });
+  } catch (error) {
+    console.warn("[Android Background] Failed to update notification", error);
+  }
+};
+
+/**
+ * フォアグラウンドサービスが実行中かどうかを確認
+ */
+export const isAndroidForegroundServiceRunning = (): boolean => {
+  if (Platform.OS !== "android") {
+    return false;
+  }
+  return BackgroundService.isRunning();
 };
 
 type EnsureOptions = {

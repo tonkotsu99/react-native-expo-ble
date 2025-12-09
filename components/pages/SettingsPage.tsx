@@ -151,6 +151,17 @@ export default function SettingsPage() {
           }
         },
       },
+      {
+        id: "forceOutside",
+        type: "action" as const,
+        title: "手動で「エリア外」に設定",
+        description: "学外にいる場合、手動で状態をOUTSIDEに修正",
+        onPress: async () => {
+          await setAppState("OUTSIDE");
+          setAppStateLocal("OUTSIDE");
+          console.log("状態を手動でOUTSIDEに設定しました");
+        },
+      },
     ],
     [
       appState,

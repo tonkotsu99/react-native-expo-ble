@@ -42,13 +42,16 @@
         "android.permission.BLUETOOTH",
         "android.permission.BLUETOOTH_ADMIN",
         "android.permission.BLUETOOTH_CONNECT",
+        "android.permission.BLUETOOTH_SCAN",
         "android.permission.ACCESS_COARSE_LOCATION",
         "android.permission.ACCESS_FINE_LOCATION",
         "android.permission.ACCESS_BACKGROUND_LOCATION",
         "android.permission.POST_NOTIFICATIONS",
         "android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS",
         "android.permission.FOREGROUND_SERVICE",
-        "android.permission.FOREGROUND_SERVICE_LOCATION"
+        "android.permission.FOREGROUND_SERVICE_LOCATION",
+        "android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE",
+        "android.permission.WAKE_LOCK"
       ],
       "package": "com.nozakimanato.reactnativeexpoble"
     },
@@ -83,7 +86,8 @@
           "isAndroidBackgroundLocationEnabled": true
         }
       ],
-      "./plugins/withTransistorsoftBackgroundFetch"
+      "./plugins/withTransistorsoftBackgroundFetch",
+      "./plugins/withBackgroundActions"
     ],
     "experiments": {
       "typedRoutes": true,

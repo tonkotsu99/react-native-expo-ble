@@ -1,3 +1,4 @@
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
   LocationGeofencingEventType,
   type LocationRegion,
@@ -32,7 +33,44 @@ import { postInsideAreaStatus } from "./insideAreaStatus";
 import { initPeriodicTask } from "./periodicCheckTask";
 
 const GEOFENCING_TASK_NAME = "background-geofencing-task";
-let backgroundFetchStarted = false;
+const BACKGROUND_FETCH_STARTED_KEY = "background_fetch_started";
+
+// メモリキャッシュ（起動中の高速アクセス用）
+let backgroundFetchStartedCache: boolean | null = null;
+
+/**
+ * BackgroundFetch開始状態を取得（永続化対応）
+ */
+const getBackgroundFetchStarted = async (): Promise<boolean> => {
+  if (backgroundFetchStartedCache !== null) {
+    return backgroundFetchStartedCache;
+  }
+  try {
+    const value = await AsyncStorage.getItem(BACKGROUND_FETCH_STARTED_KEY);
+    backgroundFetchStartedCache = value === "true";
+    return backgroundFetchStartedCache;
+  } catch {
+    return false;
+  }
+};
+
+/**
+ * BackgroundFetch開始状態を保存（永続化対応）
+ */
+const setBackgroundFetchStarted = async (started: boolean): Promise<void> => {
+  backgroundFetchStartedCache = started;
+  try {
+    await AsyncStorage.setItem(
+      BACKGROUND_FETCH_STARTED_KEY,
+      started ? "true" : "false"
+    );
+  } catch (error) {
+    console.warn(
+      "[Geofencing Task] Failed to persist backgroundFetchStarted:",
+      error
+    );
+  }
+};
 
 const safeSendDebugNotification = async (
   title: string,
@@ -150,7 +188,8 @@ TaskManager.defineTask(GEOFENCING_TASK_NAME, async ({ data, error }) => {
     }
 
     // 定期タスクを初期化して開始（多重開始をガード）
-    if (!backgroundFetchStarted) {
+    const alreadyStarted = await getBackgroundFetchStarted();
+    if (!alreadyStarted) {
       await safeSendDebugNotification(
         "Geofence Enter",
         "Entered area; initializing BackgroundFetch"
@@ -158,7 +197,7 @@ TaskManager.defineTask(GEOFENCING_TASK_NAME, async ({ data, error }) => {
       await initPeriodicTask();
       try {
         await BackgroundFetch.start();
-        backgroundFetchStarted = true;
+        await setBackgroundFetchStarted(true);
         console.log("[Geofencing Task] BackgroundFetch started");
         await logAndroidBackgroundState("background-fetch-start", {
           reason: "geofence-enter",
@@ -197,7 +236,7 @@ TaskManager.defineTask(GEOFENCING_TASK_NAME, async ({ data, error }) => {
 
     try {
       await BackgroundFetch.stop(); // 定期タスクを停止
-      backgroundFetchStarted = false;
+      await setBackgroundFetchStarted(false);
       console.log("[Geofencing Task] BackgroundFetch stopped");
       await logAndroidBackgroundState("background-fetch-stop", {
         reason: "geofence-exit",
