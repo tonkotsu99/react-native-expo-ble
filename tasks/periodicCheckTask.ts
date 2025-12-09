@@ -390,8 +390,16 @@ const scanAndReconnect = async (): Promise<boolean> => {
 
 /** 15分ごとに実行されるタスク */
 const periodicTask = async (taskId: string) => {
-  console.log("[BackgroundFetch] taskId:", taskId);
-  await logAndroidBackgroundState("periodic-task", { taskId });
+  const isCustomTask = taskId === "com.reactnativeexpoble.periodic-ble-check";
+  console.log(
+    `[BackgroundFetch] taskId: ${taskId}${
+      isCustomTask ? " (custom scheduled task)" : ""
+    }`
+  );
+  await logAndroidBackgroundState("periodic-task", {
+    taskId,
+    isCustomTask,
+  });
 
   try {
     // Android: 常時スキャンが有効な場合はスキップ
@@ -555,6 +563,8 @@ export const initPeriodicTask = async () => {
   );
 
   // Android: より頻繁なチェックのためにカスタムタスクをスケジュール
+  // 注意: scheduleTaskでスケジュールしたタスクは、configureで登録した
+  // periodicTaskハンドラを使用します。taskIdで識別できます。
   if (Platform.OS === "android") {
     try {
       await BackgroundFetch.scheduleTask({
@@ -567,10 +577,16 @@ export const initPeriodicTask = async () => {
         startOnBoot: true,
       });
       console.log(
-        "[Periodic Check] Scheduled custom periodic task for Android"
+        "[Periodic Check] Scheduled custom periodic task for Android (5min interval)"
       );
+      await logAndroidBackgroundState("custom-task-scheduled", {
+        taskId: "com.reactnativeexpoble.periodic-ble-check",
+      });
     } catch (error) {
       console.warn("[Periodic Check] Failed to schedule custom task:", error);
+      await logAndroidBackgroundState("custom-task-schedule-failed", {
+        error: String((error as Error)?.message ?? error),
+      });
     }
   }
 };
@@ -667,15 +683,54 @@ const ensureHeadlessInitialization = async (): Promise<boolean> => {
           `state=${appState}; foregroundRunning=${foregroundRunning}`
         );
       } else {
-        // フォアグラウンドサービスが動作していない場合は連続スキャンを再開しない
-        // （バックグラウンド制限により数秒で停止するため）
-        console.log(
-          `${LOG} Foreground service not running. Skipping continuous scan resume.`
-        );
-        await notifyAndroidDebug(
-          "Headless scan skipped",
-          `state=${appState}; foregroundRunning=false; relying on periodic scan`
-        );
+        // フォアグラウンドサービスが動作していない場合、通知権限があれば再起動を試みる
+        const {
+          ensureAndroidBackgroundCapabilities,
+          startAndroidBleForegroundService,
+        } = await import("../utils/androidBackground");
+        const capabilities = await ensureAndroidBackgroundCapabilities({
+          interactive: false,
+          reason: "headless-resume",
+        });
+
+        if (capabilities.notificationsGranted) {
+          // 通知権限があればフォアグラウンドサービスを再起動して連続スキャンを再開
+          try {
+            await startAndroidBleForegroundService("headless-resume", {
+              title: "研究室ビーコンを監視しています",
+              body: "バックグラウンドでビーコンを検出しています",
+            });
+            await startContinuousBleScanner();
+            console.log(
+              `${LOG} Foreground service restarted and continuous scan resumed`
+            );
+            await notifyAndroidDebug(
+              "Headless scan resumed",
+              `state=${appState}; foreground service restarted`
+            );
+          } catch (restartError) {
+            console.warn(
+              `${LOG} Failed to restart foreground service:`,
+              restartError
+            );
+            await notifyAndroidDebug(
+              "Headless scan resume failed",
+              `state=${appState}; error=${String(
+                (restartError as Error)?.message ?? restartError
+              )}`
+            );
+          }
+        } else {
+          // 通知権限がない場合は連続スキャンを再開しない
+          // （バックグラウンド制限により数秒で停止するため）
+          console.log(
+            `${LOG} Foreground service not running and notifications not granted. Skipping continuous scan resume.`
+          );
+          await notifyAndroidDebug(
+            "Headless scan skipped",
+            `state=${appState}; foregroundRunning=false; notificationsGranted=false; relying on periodic scan`
+          );
+        }
       }
     }
   } catch (error) {

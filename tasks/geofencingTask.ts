@@ -178,11 +178,17 @@ TaskManager.defineTask(GEOFENCING_TASK_NAME, async ({ data, error }) => {
       // 通知許可がない場合は警告（フォアグラウンドサービスが制限される可能性）
       if (!capabilities.notificationsGranted) {
         console.warn(
-          "[Geofencing Task] POST_NOTIFICATIONS not granted. Foreground service may be limited."
+          "[Geofencing Task] POST_NOTIFICATIONS not granted. Foreground service cannot be started."
+        );
+        console.warn(
+          "[Geofencing Task] Background BLE scanning will be limited to periodic checks (15min intervals)."
+        );
+        console.warn(
+          "[Geofencing Task] Users can grant permission in Settings > Apps > [App Name] > Notifications"
         );
         await notifyAndroidDebug(
           "Geofence Enter Warning",
-          "通知許可がありません。バックグラウンドスキャンが制限される可能性があります。"
+          "通知許可がありません。Android 13+では通知許可がないとフォアグラウンドサービスが起動できません。バックグラウンドスキャンは定期チェック（15分間隔）のみになります。設定から通知許可を有効にしてください。"
         );
       }
 

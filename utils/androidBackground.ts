@@ -386,9 +386,25 @@ const requestPostNotificationsAsync = async (
       await AsyncStorage.setItem(NOTIFICATION_PROMPT_KEY, "requested");
       await notifyAndroidDebug(
         "POST_NOTIFICATIONS required",
-        `reason=${reason}; prompting deferred`
+        `reason=${reason}; prompting deferred. Note: Android 13+ requires notification permission for foreground service (background BLE scanning).`
       );
       return { granted: false, requested: false };
+    }
+
+    // 初回プロンプトの場合、より詳細な説明をログに記録
+    const isFirstPrompt = !(await AsyncStorage.getItem(
+      NOTIFICATION_PROMPT_KEY
+    ));
+    if (isFirstPrompt) {
+      console.log(
+        "[Android Background] Requesting notification permission for the first time."
+      );
+      console.log(
+        "[Android Background] IMPORTANT: Android 13+ requires notification permission to run foreground services."
+      );
+      console.log(
+        "[Android Background] Without this permission, background BLE scanning will be limited to periodic checks (15min intervals)."
+      );
     }
 
     const requested = await Notifications.requestPermissionsAsync({
@@ -402,9 +418,19 @@ const requestPostNotificationsAsync = async (
     const granted = requested.granted || requested.status === "granted";
     await AsyncStorage.setItem(NOTIFICATION_PROMPT_KEY, "requested");
     if (!granted) {
+      console.warn(
+        "[Android Background] Notification permission denied. Background BLE scanning will be limited."
+      );
+      console.warn(
+        "[Android Background] Users can grant permission later in Settings > Apps > [App Name] > Notifications"
+      );
       await notifyAndroidDebug(
         "POST_NOTIFICATIONS denied",
-        `reason=${reason}; status=${requested.status}`
+        `reason=${reason}; status=${requested.status}. Background scanning will use periodic checks only (15min intervals).`
+      );
+    } else {
+      console.log(
+        "[Android Background] Notification permission granted. Foreground service can be used for continuous BLE scanning."
       );
     }
     return { granted, requested: true };
