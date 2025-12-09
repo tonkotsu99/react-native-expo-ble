@@ -1,8 +1,10 @@
 import { getAppState, setAppState } from "@/state/appState";
+import { initPeriodicTask } from "@/tasks/periodicCheckTask";
 import { ensureAndroidBackgroundCapabilities } from "@/utils/androidBackground";
 import * as Location from "expo-location";
 import { useEffect } from "react";
 import { Platform } from "react-native";
+import BackgroundFetch from "react-native-background-fetch";
 import "../tasks/geofencingTask"; // タスク定義ファイルをインポートして登録
 
 const GEOFENCING_TASK_NAME = "background-geofencing-task";
@@ -38,12 +40,38 @@ const calculateDistance = (
 
 /**
  * 現在位置がジオフェンス内かどうかをチェック
+ * エリア内であれば BackgroundFetch を初期化して定期スキャンを開始
  */
 const checkInitialLocation = async (): Promise<void> => {
   try {
     const currentState = await getAppState();
 
-    // 既に INSIDE_AREA または PRESENT の場合はスキップ
+    // INSIDE_AREA, PRESENT, UNCONFIRMED のいずれかであれば BackgroundFetch を初期化
+    // ジオフェンス ENTER が発火しなかった場合（冷スタート、許可不足等）の補完
+    const shouldInitBackgroundFetch =
+      currentState === "INSIDE_AREA" ||
+      currentState === "PRESENT" ||
+      currentState === "UNCONFIRMED";
+
+    if (shouldInitBackgroundFetch) {
+      console.log(
+        `[Geofencing] State is ${currentState}, ensuring BackgroundFetch is initialized`
+      );
+      try {
+        await initPeriodicTask();
+        await BackgroundFetch.start();
+        console.log(
+          "[Geofencing] BackgroundFetch initialized on startup for existing inside-area state"
+        );
+      } catch (bgError) {
+        console.warn(
+          "[Geofencing] Failed to initialize BackgroundFetch on startup:",
+          bgError
+        );
+      }
+    }
+
+    // 既に INSIDE_AREA または PRESENT の場合は位置チェックをスキップ
     if (currentState === "INSIDE_AREA" || currentState === "PRESENT") {
       console.log("[Geofencing] Initial check skipped: already inside area");
       return;
@@ -72,12 +100,35 @@ const checkInitialLocation = async (): Promise<void> => {
         "[Geofencing] Inside geofence at startup, setting state to INSIDE_AREA"
       );
       await setAppState("INSIDE_AREA");
+
+      // 冷スタートでエリア内にいた場合も BackgroundFetch を初期化
+      try {
+        await initPeriodicTask();
+        await BackgroundFetch.start();
+        console.log(
+          "[Geofencing] BackgroundFetch initialized for cold-start inside geofence"
+        );
+      } catch (bgError) {
+        console.warn(
+          "[Geofencing] Failed to initialize BackgroundFetch on cold-start:",
+          bgError
+        );
+      }
     } else if (currentState === "UNCONFIRMED") {
       // UNCONFIRMED 状態でジオフェンス外なら OUTSIDE に修正
       console.log(
         "[Geofencing] Outside geofence at startup, fixing UNCONFIRMED to OUTSIDE"
       );
       await setAppState("OUTSIDE");
+      // エリア外なので BackgroundFetch は停止
+      try {
+        await BackgroundFetch.stop();
+        console.log(
+          "[Geofencing] BackgroundFetch stopped: outside geofence area"
+        );
+      } catch {
+        // 停止に失敗しても問題なし
+      }
     }
   } catch (error) {
     console.warn("[Geofencing] Failed to check initial location:", error);

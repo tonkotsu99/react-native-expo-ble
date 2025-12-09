@@ -149,8 +149,10 @@ const scanAndReconnect = async (): Promise<boolean> => {
         backgroundFetchStatus: capabilities.backgroundFetchStatus ?? null,
       });
 
-      const canStartForeground =
-        capabilities.notificationsGranted && capabilities.batteryOptimizationOk;
+      // Android 13+ では POST_NOTIFICATIONS 権限がフォアグラウンドサービスに必須
+      // バッテリー最適化は BackgroundFetch のスロットリングに影響するが、
+      // フォアグラウンドサービス自体の起動には影響しない
+      const canStartForeground = capabilities.notificationsGranted;
       if (canStartForeground) {
         await startAndroidBleForegroundService(androidReason, {
           title: "研究室ビーコンを再探索しています",
@@ -160,7 +162,14 @@ const scanAndReconnect = async (): Promise<boolean> => {
       } else {
         await notifyAndroidDebug(
           "Foreground service unavailable",
-          `context=periodic; notificationsGranted=${capabilities.notificationsGranted}; batteryOptimizationOk=${capabilities.batteryOptimizationOk}`
+          `context=periodic; notificationsGranted=${capabilities.notificationsGranted} (required for Android 13+)`
+        );
+      }
+
+      // バッテリー最適化が有効な場合は警告（スキャン自体は続行）
+      if (!capabilities.batteryOptimizationOk) {
+        console.warn(
+          `${LOG_PREFIX} Battery optimization active. BackgroundFetch may be throttled.`
         );
       }
     } catch (error) {
@@ -513,26 +522,85 @@ export const initPeriodicTask = async () => {
 };
 
 /**
+ * Headless 環境での初期化を行う
+ * アプリがバックグラウンドで起動された際、AsyncStorage や BLE Manager が
+ * 正しく初期化されていることを確認する
+ */
+const ensureHeadlessInitialization = async (): Promise<boolean> => {
+  const LOG = "[BackgroundFetch Headless]";
+
+  try {
+    // AsyncStorage の初期化確認（読み取りテスト）
+    const testKey = "__headless_init_check";
+    const { default: AsyncStorage } = await import(
+      "@react-native-async-storage/async-storage"
+    );
+    await AsyncStorage.setItem(testKey, "1");
+    await AsyncStorage.removeItem(testKey);
+    console.log(`${LOG} AsyncStorage initialized successfully`);
+  } catch (error) {
+    console.error(`${LOG} AsyncStorage initialization failed:`, error);
+    return false;
+  }
+
+  try {
+    // BLE Manager の状態確認
+    const { bleManager } = await import("../bluetooth/bleManagerInstance");
+    const state = await bleManager.state();
+    console.log(`${LOG} BLE Manager state: ${state}`);
+
+    // Bluetooth がオフの場合でも初期化は成功とみなす
+    // （スキャン時に再度チェックされる）
+  } catch (error) {
+    console.error(`${LOG} BLE Manager initialization failed:`, error);
+    // BLE の初期化に失敗してもタスクは続行
+    // （ネットワーク処理などは可能）
+  }
+
+  try {
+    // フォアグラウンドサービス状態を同期
+    const { syncForegroundServiceState } = await import(
+      "../utils/androidBackground"
+    );
+    await syncForegroundServiceState();
+    console.log(`${LOG} Foreground service state synchronized`);
+  } catch (error) {
+    console.warn(`${LOG} Failed to sync foreground service state:`, error);
+  }
+
+  return true;
+};
+
+/**
  * Android Headless タスクのハンドラ
  * アプリが終了している状態（プロセス殺害後やデバイス再起動後）でも
  * BackgroundFetch イベントが発火したときに呼び出される。
  */
 const headlessTask = async (event: { taskId: string; timeout: boolean }) => {
   const { taskId, timeout } = event;
+  const LOG = "[BackgroundFetch Headless]";
 
   if (timeout) {
-    console.error("[BackgroundFetch Headless] TIMEOUT:", taskId);
+    console.error(`${LOG} TIMEOUT:`, taskId);
     BackgroundFetch.finish(taskId);
     return;
   }
 
-  console.log("[BackgroundFetch Headless] Received event:", taskId);
+  console.log(`${LOG} Received event:`, taskId);
 
   try {
+    // Headless 環境での初期化を確認
+    const initialized = await ensureHeadlessInitialization();
+    if (!initialized) {
+      console.error(`${LOG} Initialization failed. Aborting task.`);
+      BackgroundFetch.finish(taskId);
+      return;
+    }
+
     // periodicTask と同じ処理を実行
     await periodicTask(taskId);
   } catch (error) {
-    console.error("[BackgroundFetch Headless] Task failed:", error);
+    console.error(`${LOG} Task failed:`, error);
     BackgroundFetch.finish(taskId);
   }
 };

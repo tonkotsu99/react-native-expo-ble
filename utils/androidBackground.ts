@@ -31,9 +31,88 @@ const loadIntentLauncher = async (): Promise<IntentLauncherModule | null> => {
 
 const BATTERY_PROMPT_KEY = "android_battery_prompt_v1";
 const NOTIFICATION_PROMPT_KEY = "android_post_notifications_prompt_v1";
+const FOREGROUND_SERVICE_STATE_KEY = "android_foreground_service_state_v1";
 
 let foregroundActiveReason: string | null = null;
 let foregroundServiceRunning = false;
+
+/**
+ * フォアグラウンドサービス状態を永続化
+ * プロセス再起動時に実際のサービス状態と同期するために使用
+ */
+const persistForegroundServiceState = async (
+  running: boolean,
+  reason: string | null
+): Promise<void> => {
+  try {
+    if (running && reason) {
+      await AsyncStorage.setItem(
+        FOREGROUND_SERVICE_STATE_KEY,
+        JSON.stringify({ running, reason, timestamp: Date.now() })
+      );
+    } else {
+      await AsyncStorage.removeItem(FOREGROUND_SERVICE_STATE_KEY);
+    }
+  } catch (error) {
+    console.warn(
+      "[Android Background] Failed to persist foreground service state",
+      error
+    );
+  }
+};
+
+/**
+ * 永続化されたフォアグラウンドサービス状態と実際の状態を同期
+ * Headless タスク起動時に呼び出す
+ */
+export const syncForegroundServiceState = async (): Promise<void> => {
+  if (Platform.OS !== "android") {
+    return;
+  }
+
+  try {
+    const isActuallyRunning = BackgroundService.isRunning();
+    const stored = await AsyncStorage.getItem(FOREGROUND_SERVICE_STATE_KEY);
+
+    if (stored) {
+      const parsed = JSON.parse(stored) as {
+        running: boolean;
+        reason: string;
+        timestamp: number;
+      };
+
+      if (isActuallyRunning) {
+        // 実際に動作中なら状態を復元
+        foregroundServiceRunning = true;
+        foregroundActiveReason = parsed.reason;
+        console.log(
+          "[Android Background] Foreground service state restored",
+          parsed
+        );
+      } else {
+        // 実際には動作していない場合は永続化状態をクリア
+        foregroundServiceRunning = false;
+        foregroundActiveReason = null;
+        await AsyncStorage.removeItem(FOREGROUND_SERVICE_STATE_KEY);
+        console.log(
+          "[Android Background] Foreground service state cleared (service not running)"
+        );
+      }
+    } else {
+      // 永続化されていない場合は実際の状態を使用
+      foregroundServiceRunning = isActuallyRunning;
+      foregroundActiveReason = isActuallyRunning ? "unknown" : null;
+    }
+  } catch (error) {
+    console.warn(
+      "[Android Background] Failed to sync foreground service state",
+      error
+    );
+    // フォールバック: 実際のサービス状態を確認
+    foregroundServiceRunning = BackgroundService.isRunning();
+    foregroundActiveReason = foregroundServiceRunning ? "unknown" : null;
+  }
+};
 
 // 無限ループタスク（フォアグラウンドサービスを維持するためのダミータスク）
 // 実際のBLEスキャンは別のモジュールで行われる
@@ -168,6 +247,7 @@ export const startAndroidBleForegroundService = async (
     await BackgroundService.start(foregroundTask, options);
     foregroundServiceRunning = true;
     foregroundActiveReason = reason;
+    await persistForegroundServiceState(true, reason);
     await notifyAndroidDebug(
       "Foreground service started",
       `reason=${reason}; taskName=${options.taskName}`
@@ -175,6 +255,7 @@ export const startAndroidBleForegroundService = async (
   } catch (error) {
     foregroundServiceRunning = false;
     foregroundActiveReason = null;
+    await persistForegroundServiceState(false, null);
     const message = String((error as Error)?.message ?? error);
     console.warn("[Android Background] Failed to start foreground service", {
       error,
@@ -199,11 +280,16 @@ export const stopAndroidBleForegroundService = async (
       await BackgroundService.stop();
       foregroundServiceRunning = false;
       foregroundActiveReason = null;
+      await persistForegroundServiceState(false, null);
       await notifyAndroidDebug(
         "Foreground service stopped",
         `reason=${reason}`
       );
     } else {
+      // サービスが動作していない場合も状態をクリア
+      foregroundServiceRunning = false;
+      foregroundActiveReason = null;
+      await persistForegroundServiceState(false, null);
       await notifyAndroidDebug(
         "Foreground service not running",
         `reason=${reason}; nothing to stop`

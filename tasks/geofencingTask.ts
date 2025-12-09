@@ -20,7 +20,9 @@ import {
 } from "../state/appState";
 import { getUserId } from "../state/userProfile";
 import {
+  ensureAndroidBackgroundCapabilities,
   logAndroidBackgroundState,
+  notifyAndroidDebug,
   startAndroidBleForegroundService,
   stopAndroidBleForegroundService,
 } from "../utils/androidBackground";
@@ -159,10 +161,62 @@ TaskManager.defineTask(GEOFENCING_TASK_NAME, async ({ data, error }) => {
     // Android: フォアグラウンドサービス付きで常時 BLE スキャンを開始
     // ネットワーク通信(postInsideAreaStatus)の前に実行して、プロセスがキルされるのを防ぐ
     if (Platform.OS === "android") {
-      await startAndroidBleForegroundService("continuous-scan", {
-        title: "研究室ビーコンを監視しています",
-        body: "学内にいる間、バックグラウンドでビーコンを検出します",
+      // バックグラウンド能力を確認（通知許可、バッテリー最適化）
+      // ジオフェンス ENTER はバックグラウンドで発火するため、interactive: false で
+      // ユーザープロンプトは出さず、状態のログと通知のみ行う
+      const capabilities = await ensureAndroidBackgroundCapabilities({
+        interactive: false,
+        reason: "geofence-enter",
       });
+
+      await logAndroidBackgroundState("geofence-enter-capabilities", {
+        notificationsGranted: capabilities.notificationsGranted,
+        batteryOptimizationOk: capabilities.batteryOptimizationOk,
+        backgroundFetchStatus: capabilities.backgroundFetchStatus,
+      });
+
+      // 通知許可がない場合は警告（フォアグラウンドサービスが制限される可能性）
+      if (!capabilities.notificationsGranted) {
+        console.warn(
+          "[Geofencing Task] POST_NOTIFICATIONS not granted. Foreground service may be limited."
+        );
+        await notifyAndroidDebug(
+          "Geofence Enter Warning",
+          "通知許可がありません。バックグラウンドスキャンが制限される可能性があります。"
+        );
+      }
+
+      // バッテリー最適化が有効な場合は警告
+      if (!capabilities.batteryOptimizationOk) {
+        console.warn(
+          "[Geofencing Task] Battery optimization active. BackgroundFetch may be throttled."
+        );
+        await notifyAndroidDebug(
+          "Geofence Enter Warning",
+          "バッテリー最適化が有効です。定期スキャンが遅延する可能性があります。"
+        );
+      }
+
+      // Android 13+ では POST_NOTIFICATIONS 権限がないとフォアグラウンドサービスの
+      // 通知が表示されず、サービスが正常に動作しない
+      // バッテリー最適化は警告のみで、フォアグラウンドサービスには影響しない
+      const canStartForeground = capabilities.notificationsGranted;
+
+      if (canStartForeground) {
+        await startAndroidBleForegroundService("continuous-scan", {
+          title: "研究室ビーコンを監視しています",
+          body: "学内にいる間、バックグラウンドでビーコンを検出します",
+        });
+      } else {
+        console.warn(
+          "[Geofencing Task] Skipping foreground service: POST_NOTIFICATIONS not granted (required for Android 13+)"
+        );
+        await notifyAndroidDebug(
+          "Foreground Service Skipped",
+          "通知許可がありません。Android 13以上ではフォアグラウンドサービスに必須です。"
+        );
+      }
+
       await startContinuousBleScanner();
     } else if (Platform.OS === "ios") {
       // iOS: 連続スキャンを開始
