@@ -207,17 +207,20 @@ TaskManager.defineTask(GEOFENCING_TASK_NAME, async ({ data, error }) => {
           title: "研究室ビーコンを監視しています",
           body: "学内にいる間、バックグラウンドでビーコンを検出します",
         });
+        // フォアグラウンドサービスが開始できた場合のみ連続スキャンを開始
+        await startContinuousBleScanner();
       } else {
         console.warn(
-          "[Geofencing Task] Skipping foreground service: POST_NOTIFICATIONS not granted (required for Android 13+)"
+          "[Geofencing Task] Skipping foreground service and continuous scan: POST_NOTIFICATIONS not granted (required for Android 13+)"
         );
         await notifyAndroidDebug(
-          "Foreground Service Skipped",
-          "通知許可がありません。Android 13以上ではフォアグラウンドサービスに必須です。"
+          "Foreground Service & Scan Skipped",
+          "通知許可がありません。フォアグラウンドサービスなしでは連続スキャンはAndroidのバックグラウンド制限により数秒で停止するため、定期スキャンのみに頼ります。"
         );
+        // フォアグラウンドサービスなしでは連続スキャンを開始しない
+        // （Androidのバックグラウンド制限により数秒で停止するため）
+        // 代わりに定期スキャン(BackgroundFetch)のみに頼る
       }
-
-      await startContinuousBleScanner();
     } else if (Platform.OS === "ios") {
       // iOS: 連続スキャンを開始
       await startContinuousBleScanner();

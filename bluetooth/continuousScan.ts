@@ -1,3 +1,4 @@
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { AppState, Platform } from "react-native";
 import {
   API_URL_ENTER,
@@ -34,11 +35,58 @@ let watchdogInterval: ReturnType<typeof setInterval> | null = null;
 const WATCHDOG_INTERVAL_MS = 10000; // 10秒ごとにチェック
 const DETECTION_TIMEOUT_MS = 180000; // 3分間検知がなければ切断とみなす
 
+// 永続化キー
+const CONTINUOUS_SCAN_ACTIVE_KEY = "continuous_scan_active";
+
 // RSSI Smoothing
 const rssiHistory = new Map<string, number[]>();
 const RSSI_SMOOTHING_WINDOW = 5;
 
 const listeners: DetectionCallback[] = [];
+
+// ----- Persistence Helpers -----
+
+/**
+ * 連続スキャン状態を永続化
+ * Headless起動時に状態を復元するために使用
+ */
+const persistContinuousScanState = async (active: boolean): Promise<void> => {
+  try {
+    await AsyncStorage.setItem(
+      CONTINUOUS_SCAN_ACTIVE_KEY,
+      active ? "true" : "false"
+    );
+  } catch (error) {
+    console.warn("[Continuous Scan] Failed to persist scan state:", error);
+  }
+};
+
+/**
+ * 永続化された連続スキャン状態を取得
+ */
+export const getPersistedContinuousScanState = async (): Promise<boolean> => {
+  try {
+    const value = await AsyncStorage.getItem(CONTINUOUS_SCAN_ACTIVE_KEY);
+    return value === "true";
+  } catch {
+    return false;
+  }
+};
+
+/**
+ * Headless起動時にメモリ状態を永続化状態と同期
+ */
+export const syncContinuousScanState = async (): Promise<void> => {
+  try {
+    const persisted = await getPersistedContinuousScanState();
+    isContinuousScanActive = persisted;
+    console.log(
+      `[Continuous Scan] State synced from storage: active=${persisted}`
+    );
+  } catch (error) {
+    console.warn("[Continuous Scan] Failed to sync scan state:", error);
+  }
+};
 
 // ----- Helpers -----
 
@@ -231,6 +279,7 @@ export const startContinuousBleScanner = async (): Promise<void> => {
     "Continuous scan started"
   );
   isContinuousScanActive = true;
+  await persistContinuousScanState(true);
   startWatchdog();
 
   const { RSSI_ENTER_THRESHOLD, RSSI_EXIT_THRESHOLD, RSSI_DEBOUNCE_TIME_MS } =
@@ -355,6 +404,7 @@ export const startContinuousBleScanner = async (): Promise<void> => {
     console.log("[Continuous Scan] Continuous scan started successfully");
   } catch (error) {
     isContinuousScanActive = false;
+    await persistContinuousScanState(false);
     stopWatchdog();
     console.error("[Continuous Scan] Failed to start continuous scan:", error);
     throw error;
@@ -372,6 +422,7 @@ export const stopContinuousBleScanner = async (): Promise<void> => {
   try {
     bleManager.stopDeviceScan();
     isContinuousScanActive = false;
+    await persistContinuousScanState(false);
     stopWatchdog();
     clearUnconfirmedTimer();
     rssiHistory.clear();

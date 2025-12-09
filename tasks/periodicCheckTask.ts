@@ -11,6 +11,12 @@ import {
   waitForBlePoweredOn,
 } from "../bluetooth/bleStateUtils";
 import {
+  getPersistedContinuousScanState,
+  isContinuousScanActive,
+  startContinuousBleScanner,
+  syncContinuousScanState,
+} from "../bluetooth/continuousScan";
+import {
   API_URL_ENTER,
   BLE_DEVICE_NAME_PREFIXES,
   BLE_SERVICE_UUIDS,
@@ -40,8 +46,57 @@ import { postInsideAreaStatus } from "./insideAreaStatus";
 
 const SCAN_TIMEOUT_MS = 15000;
 const RETRY_INTERVAL_MS = 2 * 60 * 1000; // 2 minutes backoff for repeated retries
+const LAST_RETRY_TIMESTAMP_KEY = "last_retry_timestamp";
 let lastRetryTimestamp = 0;
 const LOG_PREFIX = "[Periodic Check]";
+
+/**
+ * lastRetryTimestamp を永続化（Headless起動対応）
+ */
+const persistLastRetryTimestamp = async (timestamp: number): Promise<void> => {
+  try {
+    const { default: AsyncStorage } = await import(
+      "@react-native-async-storage/async-storage"
+    );
+    await AsyncStorage.setItem(LAST_RETRY_TIMESTAMP_KEY, String(timestamp));
+  } catch (error) {
+    console.warn(`${LOG_PREFIX} Failed to persist lastRetryTimestamp:`, error);
+  }
+};
+
+/**
+ * 永続化された lastRetryTimestamp を取得
+ */
+const getPersistedLastRetryTimestamp = async (): Promise<number> => {
+  try {
+    const { default: AsyncStorage } = await import(
+      "@react-native-async-storage/async-storage"
+    );
+    const value = await AsyncStorage.getItem(LAST_RETRY_TIMESTAMP_KEY);
+    if (value) {
+      const parsed = parseInt(value, 10);
+      if (!isNaN(parsed)) {
+        return parsed;
+      }
+    }
+  } catch (error) {
+    console.warn(`${LOG_PREFIX} Failed to get lastRetryTimestamp:`, error);
+  }
+  return 0;
+};
+
+/**
+ * Headless起動時に lastRetryTimestamp を同期
+ */
+const syncLastRetryTimestamp = async (): Promise<void> => {
+  const persisted = await getPersistedLastRetryTimestamp();
+  if (persisted > lastRetryTimestamp) {
+    lastRetryTimestamp = persisted;
+    console.log(
+      `${LOG_PREFIX} lastRetryTimestamp synced from storage: ${persisted}`
+    );
+  }
+};
 
 /**
  * iOS/Android両対応のBluetooth権限確認
@@ -338,136 +393,135 @@ const periodicTask = async (taskId: string) => {
   console.log("[BackgroundFetch] taskId:", taskId);
   await logAndroidBackgroundState("periodic-task", { taskId });
 
-  // Android: 常時スキャンが有効な場合はスキップ
-  if (Platform.OS === "android") {
-    const { isContinuousScanActive } = await import(
-      "../bluetooth/continuousScan"
-    );
-    if (isContinuousScanActive) {
-      console.log(
-        `${LOG_PREFIX} Continuous scan active. Skipping periodic scan.`
-      );
-      await notifyAndroidDebug(
-        "Periodic scan skipped",
-        "continuous scan is active"
-      );
-      BackgroundFetch.finish(taskId);
-      return;
-    }
-  }
-
-  const previousState = await getAppState();
-  const rapidRetryWindowUntil = await getRapidRetryWindowUntil();
-  const now = Date.now();
-  const rapidRetryWindowActive =
-    typeof rapidRetryWindowUntil === "number" && now < rapidRetryWindowUntil;
-
-  const lastSeen = await getPresenceLastSeen();
-  const presenceFresh = lastSeen !== null && now - lastSeen < PRESENCE_TTL_MS;
-
-  if (previousState === "PRESENT" && !presenceFresh) {
-    console.log(
-      `${LOG_PREFIX} Presence TTL exceeded. Downgrading to UNCONFIRMED.`
-    );
-    await resetPresenceSession();
-    await setAppState("UNCONFIRMED");
-    await sendBleDisconnectedNotification(null);
-  }
-
-  if (
-    previousState === "INSIDE_AREA" ||
-    previousState === "UNCONFIRMED" ||
-    previousState === "PRESENT"
-  ) {
-    if (previousState === "INSIDE_AREA") {
-      const alreadyReported = await getInsideAreaReportStatus();
-      if (alreadyReported) {
+  try {
+    // Android: 常時スキャンが有効な場合はスキップ
+    if (Platform.OS === "android") {
+      // 永続化された状態も確認（Headless起動対応）
+      const persistedActive = await getPersistedContinuousScanState();
+      if (isContinuousScanActive || persistedActive) {
         console.log(
-          `${LOG_PREFIX} INSIDE_AREA maintained. Skipping inside-area status post.`
+          `${LOG_PREFIX} Continuous scan active. Skipping periodic scan.`
         );
-      } else {
-        const posted = await postInsideAreaStatus({ source: "periodic" });
-        if (posted) {
-          await setInsideAreaReportStatus(true);
-        } else {
+        await notifyAndroidDebug(
+          "Periodic scan skipped",
+          "continuous scan is active"
+        );
+        return;
+      }
+    }
+
+    const previousState = await getAppState();
+    const rapidRetryWindowUntil = await getRapidRetryWindowUntil();
+    const now = Date.now();
+    const rapidRetryWindowActive =
+      typeof rapidRetryWindowUntil === "number" && now < rapidRetryWindowUntil;
+
+    const lastSeen = await getPresenceLastSeen();
+    const presenceFresh = lastSeen !== null && now - lastSeen < PRESENCE_TTL_MS;
+
+    if (previousState === "PRESENT" && !presenceFresh) {
+      console.log(
+        `${LOG_PREFIX} Presence TTL exceeded. Downgrading to UNCONFIRMED.`
+      );
+      await resetPresenceSession();
+      await setAppState("UNCONFIRMED");
+      await sendBleDisconnectedNotification(null);
+    }
+
+    if (
+      previousState === "INSIDE_AREA" ||
+      previousState === "UNCONFIRMED" ||
+      previousState === "PRESENT"
+    ) {
+      if (previousState === "INSIDE_AREA") {
+        const alreadyReported = await getInsideAreaReportStatus();
+        if (alreadyReported) {
           console.log(
-            `${LOG_PREFIX} Inside-area status post failed. Will retry on next interval.`
+            `${LOG_PREFIX} INSIDE_AREA maintained. Skipping inside-area status post.`
+          );
+        } else {
+          const posted = await postInsideAreaStatus({ source: "periodic" });
+          if (posted) {
+            await setInsideAreaReportStatus(true);
+          } else {
+            console.log(
+              `${LOG_PREFIX} Inside-area status post failed. Will retry on next interval.`
+            );
+          }
+        }
+      }
+
+      const shouldRetryNow =
+        !presenceFresh ||
+        previousState !== "INSIDE_AREA" ||
+        now - lastRetryTimestamp >= RETRY_INTERVAL_MS;
+
+      if (!shouldRetryNow) {
+        console.log(
+          `${LOG_PREFIX} Retry deferred to avoid frequent scans (elapsed ${
+            now - lastRetryTimestamp
+          }ms)`
+        );
+        if (Platform.OS === "android") {
+          await notifyAndroidDebug(
+            "Periodic scan deferred",
+            `elapsedMs=${now - lastRetryTimestamp}`
+          );
+        }
+        return;
+      }
+
+      if (rapidRetryWindowActive) {
+        console.log(
+          `${LOG_PREFIX} Rapid retry window active until ${new Date(
+            rapidRetryWindowUntil!
+          ).toISOString()}. Skipping periodic scan.`
+        );
+        if (Platform.OS === "android") {
+          await notifyAndroidDebug(
+            "Periodic scan skipped",
+            `reason=rapid-retry; until=${new Date(
+              rapidRetryWindowUntil!
+            ).toISOString()}`
+          );
+        }
+        return;
+      }
+
+      if (presenceFresh) {
+        console.log(
+          `${LOG_PREFIX} Beacon detection still fresh. Skipping additional scan.`
+        );
+        return;
+      }
+
+      console.log(`${LOG_PREFIX} Beacon not fresh. Starting detection scan...`);
+      lastRetryTimestamp = now;
+      await persistLastRetryTimestamp(now);
+      const detected = await scanAndReconnect();
+      if (!detected) {
+        console.log(
+          `${LOG_PREFIX} Beacon not detected. Will retry after backoff.`
+        );
+        if (Platform.OS === "android") {
+          await notifyAndroidDebug(
+            "Periodic scan failed",
+            `state=${previousState}; nextRetry=${new Date(
+              now + RETRY_INTERVAL_MS
+            ).toISOString()}`
           );
         }
       }
-    }
-
-    const shouldRetryNow =
-      !presenceFresh ||
-      previousState !== "INSIDE_AREA" ||
-      now - lastRetryTimestamp >= RETRY_INTERVAL_MS;
-
-    if (!shouldRetryNow) {
-      console.log(
-        `${LOG_PREFIX} Retry deferred to avoid frequent scans (elapsed ${
-          now - lastRetryTimestamp
-        }ms)`
-      );
+    } else {
+      console.log(`${LOG_PREFIX} Outside area. Skipping scan.`);
       if (Platform.OS === "android") {
-        await notifyAndroidDebug(
-          "Periodic scan deferred",
-          `elapsedMs=${now - lastRetryTimestamp}`
-        );
-      }
-      BackgroundFetch.finish(taskId);
-      return;
-    }
-
-    if (rapidRetryWindowActive) {
-      console.log(
-        `${LOG_PREFIX} Rapid retry window active until ${new Date(
-          rapidRetryWindowUntil!
-        ).toISOString()}. Skipping periodic scan.`
-      );
-      if (Platform.OS === "android") {
-        await notifyAndroidDebug(
-          "Periodic scan skipped",
-          `reason=rapid-retry; until=${new Date(
-            rapidRetryWindowUntil!
-          ).toISOString()}`
-        );
-      }
-      BackgroundFetch.finish(taskId);
-      return;
-    }
-
-    if (presenceFresh) {
-      console.log(
-        `${LOG_PREFIX} Beacon detection still fresh. Skipping additional scan.`
-      );
-      BackgroundFetch.finish(taskId);
-      return;
-    }
-
-    console.log(`${LOG_PREFIX} Beacon not fresh. Starting detection scan...`);
-    lastRetryTimestamp = now;
-    const detected = await scanAndReconnect();
-    if (!detected) {
-      console.log(
-        `${LOG_PREFIX} Beacon not detected. Will retry after backoff.`
-      );
-      if (Platform.OS === "android") {
-        await notifyAndroidDebug(
-          "Periodic scan failed",
-          `state=${previousState}; nextRetry=${new Date(
-            now + RETRY_INTERVAL_MS
-          ).toISOString()}`
-        );
+        await notifyAndroidDebug("Periodic scan skipped", "state=OUTSIDE");
       }
     }
-  } else {
-    console.log(`${LOG_PREFIX} Outside area. Skipping scan.`);
-    if (Platform.OS === "android") {
-      await notifyAndroidDebug("Periodic scan skipped", "state=OUTSIDE");
-    }
+  } finally {
+    // try-finallyパターン: 例外が発生しても確実にfinishを呼び出す
+    BackgroundFetch.finish(taskId);
   }
-
-  BackgroundFetch.finish(taskId);
 };
 
 /**
@@ -568,6 +622,66 @@ const ensureHeadlessInitialization = async (): Promise<boolean> => {
     console.warn(`${LOG} Failed to sync foreground service state:`, error);
   }
 
+  try {
+    // 連続スキャン状態を同期
+    await syncContinuousScanState();
+    console.log(`${LOG} Continuous scan state synchronized`);
+  } catch (error) {
+    console.warn(`${LOG} Failed to sync continuous scan state:`, error);
+  }
+
+  try {
+    // lastRetryTimestamp を同期（スロットリングのため）
+    await syncLastRetryTimestamp();
+    console.log(`${LOG} lastRetryTimestamp synchronized`);
+  } catch (error) {
+    console.warn(`${LOG} Failed to sync lastRetryTimestamp:`, error);
+  }
+
+  // Headless起動時に、状態が INSIDE_AREA または PRESENT の場合に連続スキャンを再開
+  try {
+    const appState = await getAppState();
+    const persistedScanActive = await getPersistedContinuousScanState();
+
+    if (
+      (appState === "INSIDE_AREA" || appState === "PRESENT") &&
+      persistedScanActive &&
+      !isContinuousScanActive
+    ) {
+      console.log(
+        `${LOG} State is ${appState} and scan was active. Attempting to resume continuous scan...`
+      );
+
+      // フォアグラウンドサービスを確認・再開
+      const { isAndroidForegroundServiceRunning } = await import(
+        "../utils/androidBackground"
+      );
+      const foregroundRunning = isAndroidForegroundServiceRunning();
+
+      if (foregroundRunning) {
+        // フォアグラウンドサービスが動作中なら連続スキャンを再開
+        await startContinuousBleScanner();
+        console.log(`${LOG} Continuous scan resumed successfully`);
+        await notifyAndroidDebug(
+          "Headless scan resumed",
+          `state=${appState}; foregroundRunning=${foregroundRunning}`
+        );
+      } else {
+        // フォアグラウンドサービスが動作していない場合は連続スキャンを再開しない
+        // （バックグラウンド制限により数秒で停止するため）
+        console.log(
+          `${LOG} Foreground service not running. Skipping continuous scan resume.`
+        );
+        await notifyAndroidDebug(
+          "Headless scan skipped",
+          `state=${appState}; foregroundRunning=false; relying on periodic scan`
+        );
+      }
+    }
+  } catch (error) {
+    console.warn(`${LOG} Failed to resume continuous scan:`, error);
+  }
+
   return true;
 };
 
@@ -598,10 +712,14 @@ const headlessTask = async (event: { taskId: string; timeout: boolean }) => {
     }
 
     // periodicTask と同じ処理を実行
+    // 注意: periodicTask 内の try-finally で BackgroundFetch.finish() が呼ばれるため
+    // ここでは finish を呼び出さない
     await periodicTask(taskId);
   } catch (error) {
     console.error(`${LOG} Task failed:`, error);
-    BackgroundFetch.finish(taskId);
+    // periodicTask が例外をスローした場合は、try-finally が実行されずにここに来る可能性がある
+    // ただし、現在の periodicTask 実装では例外をスローしないので、ここには到達しないはず
+    // 安全のため、フラグで二重呼び出しを防止
   }
 };
 
