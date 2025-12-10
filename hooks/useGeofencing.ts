@@ -13,7 +13,7 @@ const GEOFENCING_TASK_NAME = "background-geofencing-task";
 const GEOFENCE_CENTER = {
   latitude: 33.8935,
   longitude: 130.8412,
-  radius: 200, // メートル
+  radius: 100, // メートル
 };
 
 /**
