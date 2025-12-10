@@ -7,6 +7,7 @@ import {
 } from "../constants";
 import { getAppState, setAppState } from "../state/appState";
 import { getUserId } from "../state/userProfile";
+import { isAndroidForegroundServiceRunning } from "../utils/androidBackground";
 import {
   sendBleConnectedNotification,
   sendBleDisconnectedNotification,
@@ -192,6 +193,12 @@ const startWatchdog = () => {
     // iOSバックグラウンド時はタイムアウト判定をスキップ
     // (OS仕様によりバックグラウンドではRSSI更新が止まるため、誤切断を防ぐ)
     if (Platform.OS === "ios" && AppState.currentState !== "active") {
+      return;
+    }
+
+    // Androidでフォアグラウンドサービスが動作している時はタイムアウト判定をスキップ
+    // (フォアグラウンドサービス中でもBLEスキャンが一時的に停止することがあるため、誤切断を防ぐ)
+    if (Platform.OS === "android" && isAndroidForegroundServiceRunning()) {
       return;
     }
 
@@ -421,13 +428,17 @@ export const stopContinuousBleScanner = async (): Promise<void> => {
 
   try {
     bleManager.stopDeviceScan();
-    isContinuousScanActive = false;
-    await persistContinuousScanState(false);
-    stopWatchdog();
-    clearUnconfirmedTimer();
-    rssiHistory.clear();
-    console.log("[Continuous Scan] Continuous scan stopped successfully");
   } catch (error) {
-    console.error("[Continuous Scan] Failed to stop continuous scan:", error);
+    console.error("[Continuous Scan] Failed to stop device scan:", error);
+    // スキャン停止に失敗しても状態はリセットする
   }
+
+  // 状態を確実にリセット
+  isContinuousScanActive = false;
+  await persistContinuousScanState(false);
+  stopWatchdog();
+  clearUnconfirmedTimer();
+  rssiHistory.clear();
+  lastDetectionTime = 0; // 検出タイムスタンプもリセット
+  console.log("[Continuous Scan] Continuous scan stopped successfully");
 };
