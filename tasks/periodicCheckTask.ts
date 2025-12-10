@@ -21,6 +21,7 @@ import {
   BLE_DEVICE_NAME_PREFIXES,
   BLE_SERVICE_UUIDS,
   DEBUG_BLE,
+  RSSI_ENTER_THRESHOLD,
 } from "../constants";
 import {
   getAppState,
@@ -49,6 +50,9 @@ const RETRY_INTERVAL_MS = 2 * 60 * 1000; // 2 minutes backoff for repeated retri
 const LAST_RETRY_TIMESTAMP_KEY = "last_retry_timestamp";
 let lastRetryTimestamp = 0;
 const LOG_PREFIX = "[Periodic Check]";
+
+// 初期化済みフラグ（重複初期化を防ぐ）
+let isPeriodicTaskInitialized = false;
 
 /**
  * lastRetryTimestamp を永続化（Headless起動対応）
@@ -320,34 +324,66 @@ const scanAndReconnect = async (): Promise<boolean> => {
           }
 
           const timestamp = Date.now();
+          const rssi = typeof device.rssi === "number" ? device.rssi : -100;
 
           try {
             await recordPresenceDetection(
               {
                 deviceId: device.id,
                 deviceName: device.name ?? null,
-                rssi: typeof device.rssi === "number" ? device.rssi : null,
+                rssi: rssi !== -100 ? rssi : null,
               },
               timestamp
             );
 
             const currentState = await getAppState();
-            if (currentState !== "PRESENT") {
-              await setAppState("PRESENT");
-              await sendBleConnectedNotification(device.name);
-            }
 
-            const enterSentAt = await getPresenceEnterSentAt();
-            if (enterSentAt === null) {
-              await postEnterAttendance({
-                deviceId: device.id,
-                deviceName: device.name ?? null,
-              });
-              await setPresenceEnterSentAt(timestamp);
-              if (DEBUG_BLE) {
-                await sendDebugNotification(
-                  "Attendance Recorded",
-                  device.name ?? device.id
+            // RSSIベースの判定: RSSI_ENTER_THRESHOLD以上の場合のみPRESENTに設定
+            if (rssi >= RSSI_ENTER_THRESHOLD) {
+              if (
+                currentState === "INSIDE_AREA" ||
+                currentState === "OUTSIDE"
+              ) {
+                console.log(
+                  `${LOG_PREFIX} Enter threshold met: ${rssi} >= ${RSSI_ENTER_THRESHOLD}`
+                );
+                await setAppState("PRESENT");
+                await sendBleConnectedNotification(device.name);
+
+                const enterSentAt = await getPresenceEnterSentAt();
+                if (enterSentAt === null) {
+                  await postEnterAttendance({
+                    deviceId: device.id,
+                    deviceName: device.name ?? null,
+                  });
+                  await setPresenceEnterSentAt(timestamp);
+                  if (DEBUG_BLE) {
+                    await sendDebugNotification(
+                      "Attendance Recorded",
+                      device.name ?? device.id
+                    );
+                  }
+                }
+              } else if (currentState === "UNCONFIRMED") {
+                console.log(
+                  `${LOG_PREFIX} Re-entered threshold met: ${rssi} >= ${RSSI_ENTER_THRESHOLD}`
+                );
+                await setAppState("PRESENT");
+                await sendBleConnectedNotification(device.name);
+              } else if (currentState === "PRESENT") {
+                // 既にPRESENTの場合は何もしない（在室維持）
+              }
+            } else {
+              // RSSIが弱い場合はINSIDE_AREAのまま維持
+              console.log(
+                `${LOG_PREFIX} RSSI too weak: ${rssi} < ${RSSI_ENTER_THRESHOLD}. Maintaining ${currentState} state.`
+              );
+              if (Platform.OS === "android") {
+                await notifyAndroidDebug(
+                  "Periodic detection (weak signal)",
+                  `device=${
+                    device.name ?? device.id
+                  }; rssi=${rssi}; threshold=${RSSI_ENTER_THRESHOLD}`
                 );
               }
             }
@@ -355,7 +391,9 @@ const scanAndReconnect = async (): Promise<boolean> => {
             if (Platform.OS === "android") {
               await notifyAndroidDebug(
                 "Periodic detection success",
-                `device=${device.name ?? device.id}`
+                `device=${
+                  device.name ?? device.id
+                }; rssi=${rssi}; state=${currentState}`
               );
             }
 
@@ -418,7 +456,7 @@ const periodicTask = async (taskId: string) => {
       }
     }
 
-    const previousState = await getAppState();
+    let previousState = await getAppState();
     const rapidRetryWindowUntil = await getRapidRetryWindowUntil();
     const now = Date.now();
     const rapidRetryWindowActive =
@@ -434,6 +472,8 @@ const periodicTask = async (taskId: string) => {
       await resetPresenceSession();
       await setAppState("UNCONFIRMED");
       await sendBleDisconnectedNotification(null);
+      // 状態変更後、previousStateを更新
+      previousState = "UNCONFIRMED";
     }
 
     if (
@@ -543,6 +583,14 @@ const periodicTask = async (taskId: string) => {
  *   実行されますが、バッテリー消費が増加します。
  */
 export const initPeriodicTask = async () => {
+  // 既に初期化済みの場合はスキップ（重複初期化を防ぐ）
+  if (isPeriodicTaskInitialized) {
+    console.log(
+      `${LOG_PREFIX} Periodic task already initialized. Skipping re-initialization.`
+    );
+    return;
+  }
+
   await BackgroundFetch.configure(
     {
       minimumFetchInterval: 15, // 最小実行間隔（分）- iOS/Android共に15分が最小
@@ -589,6 +637,10 @@ export const initPeriodicTask = async () => {
       });
     }
   }
+
+  // 初期化完了フラグを設定
+  isPeriodicTaskInitialized = true;
+  console.log(`${LOG_PREFIX} Periodic task initialization completed`);
 };
 
 /**
