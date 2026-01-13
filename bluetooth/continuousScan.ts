@@ -30,10 +30,6 @@ export type DetectionCallback = (detection: {
 // ----- State -----
 export let isContinuousScanActive = false;
 let unconfirmedTimer: ReturnType<typeof setTimeout> | null = null;
-let lastDetectionTime = 0;
-let watchdogInterval: ReturnType<typeof setInterval> | null = null;
-const WATCHDOG_INTERVAL_MS = 10000; // 10秒ごとにチェック
-const DETECTION_TIMEOUT_MS = 60000; // 3分間検知がなければ切断とみなす
 
 // Enter API呼び出し中フラグ（競合状態を防ぐ）
 let isPostingEnterAttendance = false;
@@ -209,56 +205,6 @@ const postEnterAttendance = async (payload: {
   }
 };
 
-const startWatchdog = () => {
-  if (watchdogInterval) clearInterval(watchdogInterval);
-
-  console.log("[Continuous Scan] Starting watchdog timer");
-  watchdogInterval = setInterval(async () => {
-    if (!isContinuousScanActive) {
-      stopWatchdog();
-      return;
-    }
-
-    const now = Date.now();
-
-    // iOSバックグラウンド時はタイムアウト判定をスキップ
-    // (OS仕様によりバックグラウンドではRSSI更新が止まるため、誤切断を防ぐ)
-    if (Platform.OS === "ios" && AppState.currentState !== "active") {
-      return;
-    }
-
-    // Android: フォアグラウンドサービス中もタイムアウト判定を実行
-    // ビーコンが検出されなくなったら切断処理を行う
-
-    if (
-      lastDetectionTime > 0 &&
-      now - lastDetectionTime > DETECTION_TIMEOUT_MS
-    ) {
-      const currentState = await getAppState();
-      if (currentState === "PRESENT" || currentState === "UNCONFIRMED") {
-        console.log(
-          `[Continuous Scan] No beacon detected for ${DETECTION_TIMEOUT_MS}ms. Forcing state to INSIDE_AREA.`
-        );
-        await setAppState("INSIDE_AREA");
-
-        await sendBleDisconnectedNotification(null);
-
-        // リセット
-        lastDetectionTime = 0;
-        clearUnconfirmedTimer();
-      }
-    }
-  }, WATCHDOG_INTERVAL_MS);
-};
-
-const stopWatchdog = () => {
-  if (watchdogInterval) {
-    clearInterval(watchdogInterval);
-    watchdogInterval = null;
-    console.log("[Continuous Scan] Watchdog timer stopped");
-  }
-};
-
 export const startUnconfirmedTimer = async (ms: number): Promise<void> => {
   clearUnconfirmedTimer();
 
@@ -315,7 +261,6 @@ export const startContinuousBleScanner = async (): Promise<void> => {
   );
   isContinuousScanActive = true;
   await persistContinuousScanState(true);
-  startWatchdog();
 
   const { RSSI_ENTER_THRESHOLD, RSSI_EXIT_THRESHOLD, RSSI_DEBOUNCE_TIME_MS } =
     await import("../constants");
@@ -390,8 +335,6 @@ export const startContinuousBleScanner = async (): Promise<void> => {
             deviceName: device.name ?? null,
             rssi: smoothedRssi,
           });
-
-          lastDetectionTime = timestamp;
 
           await recordPresenceDetection(
             {
@@ -503,7 +446,6 @@ export const startContinuousBleScanner = async (): Promise<void> => {
   } catch (error) {
     isContinuousScanActive = false;
     await persistContinuousScanState(false);
-    stopWatchdog();
     console.error("[Continuous Scan] Failed to start continuous scan:", error);
     throw error;
   }
@@ -527,9 +469,7 @@ export const stopContinuousBleScanner = async (): Promise<void> => {
   // 状態を確実にリセット
   isContinuousScanActive = false;
   await persistContinuousScanState(false);
-  stopWatchdog();
   clearUnconfirmedTimer();
   rssiHistory.clear();
-  lastDetectionTime = 0; // 検出タイムスタンプもリセット
   console.log("[Continuous Scan] Continuous scan stopped successfully");
 };
