@@ -7,7 +7,6 @@ import {
 } from "../constants";
 import { getAppState, setAppState } from "../state/appState";
 import { getUserId } from "../state/userProfile";
-import { isAndroidForegroundServiceRunning } from "../utils/androidBackground";
 import {
   sendBleConnectedNotification,
   sendBleDisconnectedNotification,
@@ -34,7 +33,10 @@ let unconfirmedTimer: ReturnType<typeof setTimeout> | null = null;
 let lastDetectionTime = 0;
 let watchdogInterval: ReturnType<typeof setInterval> | null = null;
 const WATCHDOG_INTERVAL_MS = 10000; // 10秒ごとにチェック
-const DETECTION_TIMEOUT_MS = 180000; // 3分間検知がなければ切断とみなす
+const DETECTION_TIMEOUT_MS = 60000; // 3分間検知がなければ切断とみなす
+
+// Enter API呼び出し中フラグ（競合状態を防ぐ）
+let isPostingEnterAttendance = false;
 
 // 永続化キー
 const CONTINUOUS_SCAN_ACTIVE_KEY = "continuous_scan_active";
@@ -146,6 +148,12 @@ const postEnterAttendance = async (payload: {
   deviceId: string;
   deviceName: string | null;
 }): Promise<void> => {
+  const isBackground =
+    Platform.OS === "ios" && AppState.currentState !== "active";
+  console.log(
+    `[Continuous Scan] postEnterAttendance called (background=${isBackground})`
+  );
+
   try {
     const userId = await getUserId();
     if (!userId) {
@@ -154,6 +162,10 @@ const postEnterAttendance = async (payload: {
       );
       return;
     }
+
+    console.log(
+      `[Continuous Scan] Sending fetch to ${API_URL_ENTER} (background=${isBackground})`
+    );
 
     const response = await fetch(API_URL_ENTER, {
       method: "POST",
@@ -169,12 +181,31 @@ const postEnterAttendance = async (payload: {
       throw new Error(`API Error: ${response.status}`);
     }
 
-    console.log("[Continuous Scan] Enter attendance posted", payload);
+    console.log(
+      `[Continuous Scan] Enter attendance posted (background=${isBackground})`,
+      payload
+    );
+
+    // iOSバックグラウンドでの成功を通知で可視化
+    if (isBackground) {
+      await safeSendDebugNotification(
+        "Enter API Success (BG)",
+        `${payload.deviceName ?? payload.deviceId}`
+      );
+    }
   } catch (error) {
     console.error(
-      "[Continuous Scan] Failed to post enter attendance",
+      `[Continuous Scan] Failed to post enter attendance (background=${isBackground}):`,
       (error as Error).message
     );
+    // iOSバックグラウンドでもエラーを通知
+    if (isBackground) {
+      await safeSendDebugNotification(
+        "Enter API Error (BG)",
+        (error as Error).message
+      );
+    }
+    throw error; // 呼び出し元でキャッチできるように再スロー
   }
 };
 
@@ -196,11 +227,8 @@ const startWatchdog = () => {
       return;
     }
 
-    // Androidでフォアグラウンドサービスが動作している時はタイムアウト判定をスキップ
-    // (フォアグラウンドサービス中でもBLEスキャンが一時的に停止することがあるため、誤切断を防ぐ)
-    if (Platform.OS === "android" && isAndroidForegroundServiceRunning()) {
-      return;
-    }
+    // Android: フォアグラウンドサービス中もタイムアウト判定を実行
+    // ビーコンが検出されなくなったら切断処理を行う
 
     if (
       lastDetectionTime > 0 &&
@@ -315,6 +343,9 @@ export const startContinuousBleScanner = async (): Promise<void> => {
 
         if (!device) return;
 
+        const isBackground =
+          Platform.OS === "ios" && AppState.currentState !== "active";
+
         const serviceUUIDs = device.serviceUUIDs?.map((uuid) =>
           uuid.toLowerCase()
         );
@@ -328,6 +359,15 @@ export const startContinuousBleScanner = async (): Promise<void> => {
 
         if (!matchesService && !matchesName) {
           return;
+        }
+
+        // iOSバックグラウンドでビーコン検出時にログ
+        if (isBackground) {
+          console.log(
+            `[Continuous Scan] iOS background detection: ${
+              device.name ?? device.id
+            }, RSSI: ${device.rssi}`
+          );
         }
 
         try {
@@ -363,23 +403,74 @@ export const startContinuousBleScanner = async (): Promise<void> => {
           );
 
           const currentState = await getAppState();
+          const isBackground =
+            Platform.OS === "ios" && AppState.currentState !== "active";
+
+          // iOSバックグラウンドではRSSI閾値をスキップ
+          // バックグラウンドでBLE検出できること自体が近くにいる証拠
+          const shouldEnter =
+            isBackground || smoothedRssi >= RSSI_ENTER_THRESHOLD;
 
           if (currentState === "INSIDE_AREA" || currentState === "OUTSIDE") {
-            if (smoothedRssi >= RSSI_ENTER_THRESHOLD) {
+            if (shouldEnter) {
               console.log(
-                `[Continuous Scan] Enter threshold met: ${smoothedRssi} >= ${RSSI_ENTER_THRESHOLD}`
+                `[Continuous Scan] Enter condition met: RSSI=${smoothedRssi}, threshold=${RSSI_ENTER_THRESHOLD}, background=${isBackground}, skipThreshold=${isBackground}`
               );
               await setAppState("PRESENT");
-              await sendBleConnectedNotification(device.name);
 
               const enterSentAt = await getPresenceEnterSentAt();
-              if (enterSentAt === null) {
-                await postEnterAttendance({
-                  deviceId: device.id,
-                  deviceName: device.name ?? null,
-                });
-                await setPresenceEnterSentAt(timestamp);
+              console.log(
+                `[Continuous Scan] enterSentAt check: ${enterSentAt} (background=${isBackground})`
+              );
+              if (enterSentAt === null && !isPostingEnterAttendance) {
+                isPostingEnterAttendance = true;
+                console.log(
+                  `[Continuous Scan] Calling postEnterAttendance (background=${isBackground})`
+                );
+                try {
+                  // iOSバックグラウンドでは実行時間が限られているため、
+                  // API呼び出しを最優先で実行
+                  await postEnterAttendance({
+                    deviceId: device.id,
+                    deviceName: device.name ?? null,
+                  });
+                  console.log(
+                    `[Continuous Scan] postEnterAttendance completed (background=${isBackground})`
+                  );
+                  // 成功した場合のみタイムスタンプを記録
+                  await setPresenceEnterSentAt(timestamp);
+                } catch (enterError) {
+                  console.error(
+                    `[Continuous Scan] postEnterAttendance failed (background=${isBackground}):`,
+                    enterError
+                  );
+                  // iOSバックグラウンドでも通知でエラーを可視化
+                  await safeSendDebugNotification(
+                    "Enter API Failed",
+                    `${(enterError as Error).message} (bg=${isBackground})`
+                  );
+                  // エラー時はタイムスタンプを記録しない（次のスキャンで再試行）
+                } finally {
+                  isPostingEnterAttendance = false;
+                }
+              } else if (enterSentAt !== null) {
+                console.log(
+                  `[Continuous Scan] Skipping postEnterAttendance: already sent at ${enterSentAt}`
+                );
+              } else if (isPostingEnterAttendance) {
+                console.log(
+                  `[Continuous Scan] Skipping postEnterAttendance: already in progress`
+                );
               }
+
+              // 通知はAPI呼び出しの後に送信（iOSバックグラウンドでの実行時間を確保）
+              // 通知の失敗はAPI呼び出しに影響しないようにvoid
+              void sendBleConnectedNotification(device.name);
+            } else {
+              // フォアグラウンドでRSSIが閾値未満の場合（iOSバックグラウンドはshouldEnter=trueなのでここには来ない）
+              console.log(
+                `[Continuous Scan] RSSI below threshold: ${smoothedRssi} < ${RSSI_ENTER_THRESHOLD} (state=${currentState})`
+              );
             }
           } else if (currentState === "PRESENT") {
             clearUnconfirmedTimer();

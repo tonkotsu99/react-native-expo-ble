@@ -337,44 +337,54 @@ const scanAndReconnect = async (): Promise<boolean> => {
             );
 
             const currentState = await getAppState();
+            const isIosBackground =
+              Platform.OS === "ios" &&
+              (await import("react-native")).AppState.currentState !== "active";
 
-            // RSSIベースの判定: RSSI_ENTER_THRESHOLD以上の場合のみPRESENTに設定
-            if (rssi >= RSSI_ENTER_THRESHOLD) {
+            // iOSバックグラウンドではRSSI閾値をスキップ
+            // バックグラウンドでBLE検出できること自体が近くにいる証拠
+            const shouldEnter = isIosBackground || rssi >= RSSI_ENTER_THRESHOLD;
+
+            if (shouldEnter) {
               if (
                 currentState === "INSIDE_AREA" ||
                 currentState === "OUTSIDE"
               ) {
                 console.log(
-                  `${LOG_PREFIX} Enter threshold met: ${rssi} >= ${RSSI_ENTER_THRESHOLD}`
+                  `${LOG_PREFIX} Enter condition met: RSSI=${rssi}, threshold=${RSSI_ENTER_THRESHOLD}, iosBackground=${isIosBackground}`
                 );
                 await setAppState("PRESENT");
-                await sendBleConnectedNotification(device.name);
 
                 const enterSentAt = await getPresenceEnterSentAt();
                 if (enterSentAt === null) {
+                  // iOSバックグラウンドでは実行時間が限られているため、
+                  // API呼び出しを最優先で実行
                   await postEnterAttendance({
                     deviceId: device.id,
                     deviceName: device.name ?? null,
                   });
                   await setPresenceEnterSentAt(timestamp);
                   if (DEBUG_BLE) {
-                    await sendDebugNotification(
+                    void sendDebugNotification(
                       "Attendance Recorded",
                       device.name ?? device.id
                     );
                   }
                 }
+                // 通知はAPI呼び出しの後に送信（iOSバックグラウンドでの実行時間を確保）
+                void sendBleConnectedNotification(device.name);
               } else if (currentState === "UNCONFIRMED") {
                 console.log(
                   `${LOG_PREFIX} Re-entered threshold met: ${rssi} >= ${RSSI_ENTER_THRESHOLD}`
                 );
                 await setAppState("PRESENT");
-                await sendBleConnectedNotification(device.name);
+                void sendBleConnectedNotification(device.name);
               } else if (currentState === "PRESENT") {
                 // 既にPRESENTの場合は何もしない（在室維持）
               }
             } else {
-              // RSSIが弱い場合はINSIDE_AREAのまま維持
+              // フォアグラウンドでRSSIが弱い場合はINSIDE_AREAのまま維持
+              // (iOSバックグラウンドはshouldEnter=trueなのでここには来ない)
               console.log(
                 `${LOG_PREFIX} RSSI too weak: ${rssi} < ${RSSI_ENTER_THRESHOLD}. Maintaining ${currentState} state.`
               );

@@ -22,7 +22,7 @@ export const BLE_DEVICE_NAME_PREFIXES = ["LINBLE"];
  * RSSI しきい値 - 研究室入室判定
  * この値を超える RSSI を持つビーコンは「研究室内」と判定される
  */
-export const RSSI_ENTER_THRESHOLD = -70; // dBm
+export const RSSI_ENTER_THRESHOLD = -80; // dBm
 
 /**
  * RSSI しきい値 - 研究室退室判定
@@ -33,9 +33,9 @@ export const RSSI_EXIT_THRESHOLD = -90; // dBm
 
 /**
  * UNCONFIRMED 状態から INSIDE_AREA への遷移猶予期間（ミリ秒）
- * 3分間 RSSI が弱い状態が続いた場合に INSIDE_AREA に遷移
+ * 1分間 RSSI が弱い状態が続いた場合に INSIDE_AREA に遷移
  */
-export const RSSI_DEBOUNCE_TIME_MS = 3 * 60 * 1000; // 3分
+export const RSSI_DEBOUNCE_TIME_MS = 1 * 60 * 1000; // 1分
 
 // ---------------------------------
 
