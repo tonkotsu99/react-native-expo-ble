@@ -1,3 +1,4 @@
+import * as Location from "expo-location";
 import { Platform } from "react-native";
 import BackgroundFetch from "react-native-background-fetch";
 import { bleManager } from "../bluetooth/bleManagerInstance";
@@ -14,10 +15,12 @@ import {
   getPersistedContinuousScanState,
   isContinuousScanActive,
   startContinuousBleScanner,
+  stopContinuousBleScanner,
   syncContinuousScanState,
 } from "../bluetooth/continuousScan";
 import {
   API_URL_ENTER,
+  API_URL_EXIT,
   BLE_DEVICE_NAME_PREFIXES,
   BLE_SERVICE_UUIDS,
   DEBUG_BLE,
@@ -42,6 +45,7 @@ import {
   sendBleConnectedNotification,
   sendBleDisconnectedNotification,
   sendDebugNotification,
+  sendGeofenceExitNotification,
 } from "../utils/notifications";
 import { postInsideAreaStatus } from "./insideAreaStatus";
 
@@ -50,6 +54,152 @@ const RETRY_INTERVAL_MS = 2 * 60 * 1000; // 2 minutes backoff for repeated retri
 const LAST_RETRY_TIMESTAMP_KEY = "last_retry_timestamp";
 let lastRetryTimestamp = 0;
 const LOG_PREFIX = "[Periodic Check]";
+
+// ジオフェンス中心座標（useGeofencing.tsと同じ値）
+const GEOFENCE_CENTER = {
+  latitude: 33.8935,
+  longitude: 130.8412,
+  radius: 100, // メートル
+};
+
+/**
+ * 2点間の距離を計算（メートル）
+ */
+const calculateDistance = (
+  lat1: number,
+  lng1: number,
+  lat2: number,
+  lng2: number
+): number => {
+  const R = 6371000; // 地球の半径（メートル）
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLng = ((lng2 - lng1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos((lat1 * Math.PI) / 180) *
+      Math.cos((lat2 * Math.PI) / 180) *
+      Math.sin(dLng / 2) *
+      Math.sin(dLng / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+};
+
+/**
+ * 現在位置がジオフェンス外かどうかをチェック
+ * ジオフェンス外の場合、状態をOUTSIDEに更新し、EXIT APIを呼び出す
+ */
+const checkGeofenceExit = async (): Promise<boolean> => {
+  try {
+    const currentState = await getAppState();
+
+    // OUTSIDEの場合はチェック不要
+    if (currentState === "OUTSIDE") {
+      return false;
+    }
+
+    // 位置情報を取得
+    const location = await Location.getCurrentPositionAsync({
+      accuracy: Location.Accuracy.Balanced,
+      timeInterval: 5000,
+    });
+
+    const distance = calculateDistance(
+      location.coords.latitude,
+      location.coords.longitude,
+      GEOFENCE_CENTER.latitude,
+      GEOFENCE_CENTER.longitude
+    );
+
+    console.log(
+      `${LOG_PREFIX} Geofence check: distance=${distance.toFixed(0)}m, radius=${
+        GEOFENCE_CENTER.radius
+      }m, state=${currentState}`
+    );
+
+    // ジオフェンス外にいる場合
+    if (distance > GEOFENCE_CENTER.radius) {
+      console.log(
+        `${LOG_PREFIX} Outside geofence detected. Current state: ${currentState}. Updating to OUTSIDE.`
+      );
+
+      // UNCONFIRMEDタイマーをクリア（即座にOUTSIDEに遷移するため）
+      const { clearUnconfirmedTimer } = await import(
+        "../bluetooth/continuousScan"
+      );
+      clearUnconfirmedTimer();
+
+      // 状態をOUTSIDEに更新
+      await resetPresenceSession();
+      await setAppState("OUTSIDE");
+      await logAndroidBackgroundState("periodic-geofence-exit", {
+        previousState: currentState,
+        distance: distance.toFixed(0),
+      });
+
+      // ジオフェンス退出通知を送信
+      await sendGeofenceExitNotification();
+
+      // EXIT APIを呼び出す
+      try {
+        const userId = await getUserId();
+        if (userId) {
+          const response = await fetch(API_URL_EXIT, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ userId }),
+          });
+
+          if (!response.ok) {
+            throw new Error(`API Error: ${response.status}`);
+          }
+          console.log(
+            `${LOG_PREFIX} Exit attendance reported via periodic check.`
+          );
+        } else {
+          console.warn(`${LOG_PREFIX} Skipping exit API: missing userId`);
+        }
+      } catch (exitError) {
+        console.error(`${LOG_PREFIX} Exit attendance failed:`, exitError);
+      }
+
+      // BackgroundFetchを停止
+      try {
+        await BackgroundFetch.stop();
+        console.log(
+          `${LOG_PREFIX} BackgroundFetch stopped due to geofence exit`
+        );
+        await logAndroidBackgroundState("background-fetch-stop", {
+          reason: "periodic-geofence-exit",
+        });
+      } catch (e) {
+        console.error(`${LOG_PREFIX} BackgroundFetch stop failed:`, e);
+      }
+
+      // Android: 常時スキャンを停止
+      if (Platform.OS === "android") {
+        await stopContinuousBleScanner();
+        await stopAndroidBleForegroundService("periodic-geofence-exit");
+      } else if (Platform.OS === "ios") {
+        await stopContinuousBleScanner();
+      }
+
+      if (Platform.OS === "android") {
+        await notifyAndroidDebug(
+          "Geofence exit detected",
+          `distance=${distance.toFixed(0)}m; previousState=${currentState}`
+        );
+      }
+
+      return true; // ジオフェンス外にいる
+    }
+
+    return false; // ジオフェンス内にいる
+  } catch (error) {
+    console.warn(`${LOG_PREFIX} Failed to check geofence exit:`, error);
+    // エラーが発生した場合は、ジオフェンス内にいると仮定して処理を続行
+    return false;
+  }
+};
 
 // 初期化済みフラグ（重複初期化を防ぐ）
 let isPeriodicTaskInitialized = false;
@@ -491,6 +641,18 @@ const periodicTask = async (taskId: string) => {
       previousState === "UNCONFIRMED" ||
       previousState === "PRESENT"
     ) {
+      // Android: ジオフェンスEXITイベントが発火しなかった場合の補完として、
+      // 位置情報をチェックしてジオフェンス外にいることを検知する
+      if (Platform.OS === "android") {
+        const isOutside = await checkGeofenceExit();
+        if (isOutside) {
+          // ジオフェンス外にいることが確認されたため、処理を終了
+          console.log(`${LOG_PREFIX} Geofence exit detected. Task completed.`);
+          return;
+        }
+        // ジオフェンス内にいる場合は、既存のBLEスキャンを実行
+      }
+
       if (previousState === "INSIDE_AREA") {
         const alreadyReported = await getInsideAreaReportStatus();
         if (alreadyReported) {

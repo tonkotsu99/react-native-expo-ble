@@ -8,6 +8,7 @@ import { Platform } from "react-native";
 import BackgroundFetch from "react-native-background-fetch";
 import { resetPresenceSession } from "../bluetooth/bleStateUtils";
 import {
+  clearUnconfirmedTimer,
   startContinuousBleScanner,
   stopContinuousBleScanner,
 } from "../bluetooth/continuousScan";
@@ -281,6 +282,10 @@ TaskManager.defineTask(GEOFENCING_TASK_NAME, async ({ data, error }) => {
       "[Geofencing Task] Exited area:",
       region?.identifier ?? "unknown"
     );
+    
+    // UNCONFIRMEDタイマーをクリア（即座にOUTSIDEに遷移するため）
+    clearUnconfirmedTimer();
+    
     await resetPresenceSession();
     await setAppState("OUTSIDE");
     await logAndroidBackgroundState("geofence-exit", {
