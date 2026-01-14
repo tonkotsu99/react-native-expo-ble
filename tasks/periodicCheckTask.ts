@@ -48,19 +48,13 @@ import {
   sendGeofenceExitNotification,
 } from "../utils/notifications";
 import { postInsideAreaStatus } from "./insideAreaStatus";
+import { GEOFENCE_REGION } from "../constants/geofence";
 
 const SCAN_TIMEOUT_MS = 15000;
 const RETRY_INTERVAL_MS = 2 * 60 * 1000; // 2 minutes backoff for repeated retries
 const LAST_RETRY_TIMESTAMP_KEY = "last_retry_timestamp";
 let lastRetryTimestamp = 0;
 const LOG_PREFIX = "[Periodic Check]";
-
-// ジオフェンス中心座標（useGeofencing.tsと同じ値）
-const GEOFENCE_CENTER = {
-  latitude: 33.8935,
-  longitude: 130.8412,
-  radius: 100, // メートル
-};
 
 /**
  * 2点間の距離を計算（メートル）
@@ -106,18 +100,18 @@ const checkGeofenceExit = async (): Promise<boolean> => {
     const distance = calculateDistance(
       location.coords.latitude,
       location.coords.longitude,
-      GEOFENCE_CENTER.latitude,
-      GEOFENCE_CENTER.longitude
+      GEOFENCE_REGION.latitude,
+      GEOFENCE_REGION.longitude
     );
 
     console.log(
       `${LOG_PREFIX} Geofence check: distance=${distance.toFixed(0)}m, radius=${
-        GEOFENCE_CENTER.radius
+        GEOFENCE_REGION.radius
       }m, state=${currentState}`
     );
 
     // ジオフェンス外にいる場合
-    if (distance > GEOFENCE_CENTER.radius) {
+    if (distance > GEOFENCE_REGION.radius) {
       console.log(
         `${LOG_PREFIX} Outside geofence detected. Current state: ${currentState}. Updating to OUTSIDE.`
       );
@@ -600,21 +594,11 @@ const periodicTask = async (taskId: string) => {
   });
 
   try {
-    // Android: 常時スキャンが有効な場合はスキップ
-    if (Platform.OS === "android") {
-      // 永続化された状態も確認（Headless起動対応）
-      const persistedActive = await getPersistedContinuousScanState();
-      if (isContinuousScanActive || persistedActive) {
-        console.log(
-          `${LOG_PREFIX} Continuous scan active. Skipping periodic scan.`
-        );
-        await notifyAndroidDebug(
-          "Periodic scan skipped",
-          "continuous scan is active"
-        );
-        return;
-      }
-    }
+    // Android: 連続スキャン有効時でも、ジオフェンスEXIT取りこぼしの補完チェックは実行したい。
+    // そのため「タスク全体」を早期returnせず、BLEスキャン部分だけ後でスキップする。
+    const androidContinuousScanActive =
+      Platform.OS === "android" &&
+      (isContinuousScanActive || (await getPersistedContinuousScanState()));
 
     let previousState = await getAppState();
     const rapidRetryWindowUntil = await getRapidRetryWindowUntil();
@@ -711,6 +695,17 @@ const periodicTask = async (taskId: string) => {
       if (presenceFresh) {
         console.log(
           `${LOG_PREFIX} Beacon detection still fresh. Skipping additional scan.`
+        );
+        return;
+      }
+
+      if (androidContinuousScanActive) {
+        console.log(
+          `${LOG_PREFIX} Continuous scan active. Skipping periodic BLE scan portion.`
+        );
+        await notifyAndroidDebug(
+          "Periodic BLE scan skipped",
+          "continuous scan is active"
         );
         return;
       }

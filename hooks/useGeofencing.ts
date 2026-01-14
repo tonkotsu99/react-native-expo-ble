@@ -3,6 +3,7 @@ import {
   clearUnconfirmedTimer,
   stopContinuousBleScanner,
 } from "@/bluetooth/continuousScan";
+import { GEOFENCE_REGION } from "@/constants/geofence";
 import { getAppState, setAppState } from "@/state/appState";
 import { initPeriodicTask } from "@/tasks/periodicCheckTask";
 import {
@@ -16,13 +17,6 @@ import BackgroundFetch from "react-native-background-fetch";
 import "../tasks/geofencingTask"; // タスク定義ファイルをインポートして登録
 
 const GEOFENCING_TASK_NAME = "background-geofencing-task";
-
-// ジオフェンス中心座標
-const GEOFENCE_CENTER = {
-  latitude: 33.8935,
-  longitude: 130.8412,
-  radius: 100, // メートル
-};
 
 /**
  * 2点間の距離を計算（メートル）
@@ -93,17 +87,17 @@ const checkInitialLocation = async (): Promise<void> => {
     const distance = calculateDistance(
       location.coords.latitude,
       location.coords.longitude,
-      GEOFENCE_CENTER.latitude,
-      GEOFENCE_CENTER.longitude
+      GEOFENCE_REGION.latitude,
+      GEOFENCE_REGION.longitude
     );
 
     console.log(
       `[Geofencing] Initial location check: distance=${distance.toFixed(
         0
-      )}m, radius=${GEOFENCE_CENTER.radius}m`
+      )}m, radius=${GEOFENCE_REGION.radius}m`
     );
 
-    if (distance <= GEOFENCE_CENTER.radius) {
+    if (distance <= GEOFENCE_REGION.radius) {
       console.log(
         "[Geofencing] Inside geofence at startup, setting state to INSIDE_AREA"
       );
@@ -193,15 +187,15 @@ export const useGeofencing = () => {
 
     await Location.startGeofencingAsync(GEOFENCING_TASK_NAME, [
       {
-        identifier: "office-kyutech",
-        latitude: 33.8935, // 九州工業大学の緯度
-        longitude: 130.8412, // 九州工業大学の経度
-        radius: 200, // 半径を200m (Android精度向上のため100mから増加)
+        identifier: GEOFENCE_REGION.identifier,
+        latitude: GEOFENCE_REGION.latitude,
+        longitude: GEOFENCE_REGION.longitude,
+        radius: GEOFENCE_REGION.radius,
         notifyOnEnter: true, // 明示的に入場検知を有効化
         notifyOnExit: true,
       },
     ]);
-    console.log("Geofencing started with radius: 200m");
+    console.log(`Geofencing started with radius: ${GEOFENCE_REGION.radius}m`);
   };
 
   useEffect(() => {
