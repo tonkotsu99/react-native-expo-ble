@@ -1,6 +1,14 @@
+import { resetPresenceSession } from "@/bluetooth/bleStateUtils";
+import {
+  clearUnconfirmedTimer,
+  stopContinuousBleScanner,
+} from "@/bluetooth/continuousScan";
 import { getAppState, setAppState } from "@/state/appState";
 import { initPeriodicTask } from "@/tasks/periodicCheckTask";
-import { ensureAndroidBackgroundCapabilities } from "@/utils/androidBackground";
+import {
+  ensureAndroidBackgroundCapabilities,
+  stopAndroidBleForegroundService,
+} from "@/utils/androidBackground";
 import * as Location from "expo-location";
 import { useEffect } from "react";
 import { Platform } from "react-native";
@@ -119,6 +127,20 @@ const checkInitialLocation = async (): Promise<void> => {
       console.log(
         "[Geofencing] Outside geofence at startup, fixing UNCONFIRMED to OUTSIDE"
       );
+
+      // 連続スキャンが動いている可能性があるため、確実に停止する
+      // （Watchdog削除後に学外でもスキャンが継続するケースの対策）
+      clearUnconfirmedTimer();
+      await resetPresenceSession();
+      await stopContinuousBleScanner();
+      if (Platform.OS === "android") {
+        try {
+          await stopAndroidBleForegroundService("geofencing-startup-outside");
+        } catch {
+          // ignore
+        }
+      }
+
       await setAppState("OUTSIDE");
       // エリア外なので BackgroundFetch は停止
       try {

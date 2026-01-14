@@ -1,14 +1,20 @@
+import { resetPresenceSession } from "@/bluetooth/bleStateUtils";
+import {
+  clearUnconfirmedTimer,
+  stopContinuousBleScanner,
+} from "@/bluetooth/continuousScan";
 import type { SettingsValues } from "@/components/organisms/SettingsPanel";
 import { UserIdModal } from "@/components/organisms/UserIdModal";
 import { SettingsTemplate } from "@/components/templates/SettingsTemplate";
 import { useBLEContext } from "@/hooks/bleContext";
 import { useAttendanceUserId } from "@/hooks/useAttendanceUserId";
 import { getAppState, setAppState, type AppState } from "@/state/appState";
+import { stopAndroidBleForegroundService } from "@/utils/androidBackground";
 import { MapPin } from "@tamagui/lucide-icons";
 import * as Location from "expo-location";
 import * as TaskManager from "expo-task-manager";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { useColorScheme } from "react-native";
+import { Platform, useColorScheme } from "react-native";
 
 export default function SettingsPage() {
   const { requestPermissions } = useBLEContext();
@@ -157,6 +163,16 @@ export default function SettingsPage() {
         title: "手動で「エリア外」に設定",
         description: "学外にいる場合、手動で状態をOUTSIDEに修正",
         onPress: async () => {
+          clearUnconfirmedTimer();
+          await stopContinuousBleScanner();
+          if (Platform.OS === "android") {
+            try {
+              await stopAndroidBleForegroundService("settings-force-outside");
+            } catch {
+              // ignore
+            }
+          }
+          await resetPresenceSession();
           await setAppState("OUTSIDE");
           setAppStateLocal("OUTSIDE");
           console.log("状態を手動でOUTSIDEに設定しました");
