@@ -431,6 +431,42 @@ export const startContinuousBleScanner = async (): Promise<void> => {
               );
               await setAppState("PRESENT");
               clearUnconfirmedTimer();
+
+              // UNCONFIRMED から PRESENT に復帰した場合でも、
+              // まだ入室 API を送っていなければ送信する（手動の再検出/再接続フローで必要）。
+              const enterSentAt = await getPresenceEnterSentAt();
+              if (enterSentAt === null && !isPostingEnterAttendance) {
+                isPostingEnterAttendance = true;
+                console.log(
+                  `[Continuous Scan] Calling postEnterAttendance from UNCONFIRMED (background=${isBackground})`
+                );
+                try {
+                  await postEnterAttendance({
+                    deviceId: device.id,
+                    deviceName: device.name ?? null,
+                  });
+                  await setPresenceEnterSentAt(timestamp);
+                } catch (enterError) {
+                  console.error(
+                    `[Continuous Scan] postEnterAttendance failed from UNCONFIRMED (background=${isBackground}):`,
+                    enterError
+                  );
+                  await safeSendDebugNotification(
+                    "Enter API Failed",
+                    `${(enterError as Error).message} (bg=${isBackground})`
+                  );
+                } finally {
+                  isPostingEnterAttendance = false;
+                }
+              } else if (enterSentAt !== null) {
+                console.log(
+                  `[Continuous Scan] Skipping postEnterAttendance from UNCONFIRMED: already sent at ${enterSentAt}`
+                );
+              } else if (isPostingEnterAttendance) {
+                console.log(
+                  `[Continuous Scan] Skipping postEnterAttendance from UNCONFIRMED: already in progress`
+                );
+              }
             }
           }
         } catch (error) {
