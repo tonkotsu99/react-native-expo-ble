@@ -6,6 +6,7 @@ import {
   PRESENCE_TTL_MS,
   getPresenceEnterSentAt,
   getPresenceLastSeen,
+  getPresenceMetadata,
   recordPresenceDetection,
   resetPresenceSession,
   setPresenceEnterSentAt,
@@ -26,6 +27,7 @@ import {
   DEBUG_BLE,
   RSSI_ENTER_THRESHOLD,
 } from "../constants";
+import { GEOFENCE_REGION } from "../constants/geofence";
 import {
   getAppState,
   getInsideAreaReportStatus,
@@ -48,7 +50,6 @@ import {
   sendGeofenceExitNotification,
 } from "../utils/notifications";
 import { postInsideAreaStatus } from "./insideAreaStatus";
-import { GEOFENCE_REGION } from "../constants/geofence";
 
 const SCAN_TIMEOUT_MS = 15000;
 const RETRY_INTERVAL_MS = 2 * 60 * 1000; // 2 minutes backoff for repeated retries
@@ -522,6 +523,20 @@ const scanAndReconnect = async (): Promise<boolean> => {
                   `${LOG_PREFIX} Re-entered threshold met: ${rssi} >= ${RSSI_ENTER_THRESHOLD}`
                 );
                 await setAppState("PRESENT");
+                const enterSentAt = await getPresenceEnterSentAt();
+                if (enterSentAt === null) {
+                  await postEnterAttendance({
+                    deviceId: device.id,
+                    deviceName: device.name ?? null,
+                  });
+                  await setPresenceEnterSentAt(timestamp);
+                  if (DEBUG_BLE) {
+                    void sendDebugNotification(
+                      "Attendance Recorded",
+                      device.name ?? device.id
+                    );
+                  }
+                }
                 void sendBleConnectedNotification(device.name);
               } else if (currentState === "PRESENT") {
                 // 既にPRESENTの場合は何もしない（在室維持）
@@ -618,6 +633,28 @@ const periodicTask = async (taskId: string) => {
       await sendBleDisconnectedNotification(null);
       // 状態変更後、previousStateを更新
       previousState = "UNCONFIRMED";
+    }
+
+    // 状態が UNCONFIRMED だが検出がまだ新鮮な場合（例: プロセス再起動などでスキャンが一時停止）
+    // 追加スキャンは行わず、状態と入室送信状態の整合を取る。
+    if (previousState === "UNCONFIRMED" && presenceFresh) {
+      console.log(
+        `${LOG_PREFIX} Presence is fresh but state is UNCONFIRMED. Reconciling to PRESENT.`
+      );
+      await setAppState("PRESENT");
+      previousState = "PRESENT";
+
+      const enterSentAt = await getPresenceEnterSentAt();
+      if (enterSentAt === null) {
+        const metadata = await getPresenceMetadata();
+        if (metadata?.deviceId) {
+          await postEnterAttendance({
+            deviceId: metadata.deviceId,
+            deviceName: metadata.deviceName ?? null,
+          });
+          await setPresenceEnterSentAt(now);
+        }
+      }
     }
 
     if (
