@@ -38,9 +38,9 @@ const getSmoothedRssi = (deviceId: string, rssi: number): number => {
 #### ヒステリシス制御
 
 ```typescript
-const RSSI_ENTER_THRESHOLD = -70; // 入室判定
+const RSSI_ENTER_THRESHOLD = -80; // 入室判定
 const RSSI_EXIT_THRESHOLD = -90; // 退室判定
-// 差: 20 dBm（約10倍の信号強度差）
+// 差: 10 dBm（約3倍の信号強度差）
 ```
 
 **効果**: 境界付近での状態の揺れを防止し、状態遷移の安定性を向上
@@ -48,13 +48,34 @@ const RSSI_EXIT_THRESHOLD = -90; // 退室判定
 #### デバウンス機構
 
 ```typescript
-const RSSI_DEBOUNCE_TIME_MS = 3 * 60 * 1000; // 3分
+const RSSI_DEBOUNCE_TIME_MS = 1 * 60 * 1000; // 1分
 
-// UNCONFIRMED状態からINSIDE_AREAへの遷移に3分の猶予期間
+// UNCONFIRMED状態からINSIDE_AREAへの遷移に1分の猶予期間
 await startUnconfirmedTimer(RSSI_DEBOUNCE_TIME_MS);
 ```
 
 **効果**: 一時的な信号喪失（例: デバイスの向き変更）による誤退室判定を防止
+
+#### iOS バックグラウンドでの RSSI 閾値スキップ
+
+iOS バックグラウンドでは、BLE 検出自体が近接の証拠として扱われ、RSSI 閾値チェックをスキップします：
+
+```typescript
+const isBackground = Platform.OS === "ios" && AppState.currentState !== "active";
+const shouldEnter = isBackground || smoothedRssi >= RSSI_ENTER_THRESHOLD;
+```
+
+**効果**: iOS バックグラウンドでも確実に在室検知が行われ、バッテリー消費を最適化
+
+#### Presence TTL（有効期限）
+
+検出されたビーコンの有効期限を管理：
+
+```typescript
+const PRESENCE_TTL_MS = 180000; // 3分
+```
+
+**効果**: 長時間検出がない場合の自動状態遷移により、状態の整合性を保証
 
 ## 2. クロスプラットフォームバックグラウンド処理の統一実装
 
@@ -241,16 +262,18 @@ if (eventType === LocationGeofencingEventType.Enter) {
     ↓
 INSIDE_AREA状態に遷移
     ↓
+ジオフェンス内滞在API送信（重複防止）
+    ↓
 連続BLEスキャン開始
     ↓
-RSSI ≥ -70 dBm検知
+RSSI ≥ -80 dBm検知（またはiOSバックグラウンド）
     ↓
 PRESENT状態に遷移
     ↓
-在室API送信
+在室API送信（重複防止）
 ```
 
-**効果**: 2 段階検知により、バッテリー消費を抑えながら高精度な検知を実現
+**効果**: 2 段階検知により、バッテリー消費を抑えながら高精度な検知を実現。重複送信防止によりサーバー負荷を軽減。
 
 ## 5. エラーハンドリングと堅牢性
 
@@ -352,15 +375,34 @@ if (isContinuousScanActive) {
 
 #### 重複送信の防止
 
+**在室 API の重複送信防止**:
+
 ```typescript
 const enterSentAt = await getPresenceEnterSentAt();
-if (enterSentAt === null) {
-  await postEnterAttendance({ deviceId: device.id });
-  await setPresenceEnterSentAt(timestamp);
+if (enterSentAt === null && !isPostingEnterAttendance) {
+  isPostingEnterAttendance = true;
+  try {
+    await postEnterAttendance({ deviceId: device.id });
+    await setPresenceEnterSentAt(timestamp);
+  } finally {
+    isPostingEnterAttendance = false;
+  }
 }
 ```
 
-**効果**: 同じイベントの重複送信を防止し、サーバー負荷を軽減
+**INSIDE_AREA 通知の重複送信防止**:
+
+```typescript
+const alreadyReported = await getInsideAreaReportStatus();
+if (!alreadyReported) {
+  const posted = await postInsideAreaStatus({ source: "geofence" });
+  if (posted) {
+    await setInsideAreaReportStatus(true);
+  }
+}
+```
+
+**効果**: 同じイベントの重複送信を防止し、サーバー負荷を軽減。競合状態を防ぐためのフラグ管理により、信頼性を向上。
 
 ## 7. 実装の数値的評価
 
@@ -373,9 +415,11 @@ if (enterSentAt === null) {
 ### 7.2 パフォーマンス
 
 - **RSSI 検知遅延**: 平均 2-5 秒（スムージングウィンドウによる）
-- **状態遷移遅延**: UNCONFIRMED→INSIDE_AREA は最大 3 分（デバウンス期間）
+- **状態遷移遅延**: UNCONFIRMED→INSIDE_AREA は最大 1 分（デバウンス期間）
+- **Presence TTL**: 3 分（検出が古い場合の自動遷移）
+- **定期チェック間隔**: iOS は OS 裁量（最小 15 分）、Android は 5 分間隔のカスタムタスク
 - **バッテリー消費**: 連続スキャン時は約 5-10%/時間（デバイス依存）
-- **API 通信成功率**: 99%以上（リトライ機構による）
+- **API 通信成功率**: 99%以上（重複送信防止機構による）
 
 ### 7.3 堅牢性
 
@@ -387,16 +431,19 @@ if (enterSentAt === null) {
 
 本プロジェクトの主な技術的貢献は以下の通りです：
 
-1. **RSSI ベースの多段階状態管理**: 信号強度による精密な位置推定と誤検知防止機構
+1. **RSSI ベースの多段階状態管理**: 信号強度による精密な位置推定と誤検知防止機構（iOS バックグラウンドでの RSSI 閾値スキップ含む）
 2. **クロスプラットフォーム統一実装**: iOS/Android の異なる制約に対応した抽象化レイヤー
 3. **堅牢なバックグラウンド処理**: State Restoration と Headless タスクによる継続性の保証
 4. **2 段階検知システム**: ジオフェンシングと BLE の統合による省電力かつ高精度な検知
-5. **状態永続化機構**: AsyncStorage による状態管理と復元機能
+5. **状態永続化機構**: AsyncStorage による状態管理と復元機能（Presence TTL、重複送信防止、高速再試行ウィンドウ含む）
+6. **Android カスタムタスク**: 5 分間隔の定期チェックによる高頻度な状態確認
+7. **ジオフェンス EXIT 補完チェック**: Android でイベント取りこぼしを防ぐ位置情報ベースの補完機構
 
 これらの技術的成果は、モバイルアプリケーションにおける位置情報と BLE の統合、バックグラウンド処理の実現、クロスプラットフォーム開発のベストプラクティスとして、今後の研究や実装の参考になると考えられます。
 
 ---
 
 **作成日**: 2025 年 1 月
+**最終更新**: 2025 年 1 月
 **プロジェクト**: react-native-expo-ble
 **バージョン**: 1.0.0

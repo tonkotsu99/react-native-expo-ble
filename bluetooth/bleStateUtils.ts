@@ -3,7 +3,7 @@ import { Platform } from "react-native";
 import { State } from "react-native-ble-plx";
 import { bleManager } from "./bleManagerInstance";
 
-export const PRESENCE_TTL_MS = 180000;
+export const PRESENCE_TTL_MS = 60000; // 1分
 
 export type PresenceMetadata = {
   deviceId: string | null;
@@ -14,10 +14,12 @@ export type PresenceMetadata = {
 const PRESENCE_LAST_SEEN_KEY = "ble_presence_last_seen";
 const PRESENCE_ENTER_SENT_AT_KEY = "ble_presence_enter_sent_at";
 const PRESENCE_METADATA_KEY = "ble_presence_metadata";
+const UNCONFIRMED_STARTED_AT_KEY = "ble_unconfirmed_started_at";
 
 let cachedPresenceLastSeen: number | null | undefined;
 let cachedPresenceEnterSentAt: number | null | undefined;
 let cachedPresenceMetadata: PresenceMetadata | null | undefined;
+let cachedUnconfirmedStartedAt: number | null | undefined;
 
 const parseNumber = (value: string | null): number | null => {
   if (!value) return null;
@@ -118,6 +120,59 @@ export const setPresenceMetadata = async (
   await persistPresenceMetadata(metadata);
 };
 
+// ----- UNCONFIRMED開始時刻の管理 -----
+
+/**
+ * UNCONFIRMED状態になった時刻を取得する
+ * Androidバックグラウンドでの永続的なタイマー管理に使用
+ */
+export const getUnconfirmedStartedAt = async (): Promise<number | null> => {
+  if (cachedUnconfirmedStartedAt !== undefined) {
+    return cachedUnconfirmedStartedAt;
+  }
+  const raw = await AsyncStorage.getItem(UNCONFIRMED_STARTED_AT_KEY);
+  cachedUnconfirmedStartedAt = parseNumber(raw);
+  return cachedUnconfirmedStartedAt;
+};
+
+const persistUnconfirmedStartedAt = async (
+  timestamp: number | null
+): Promise<void> => {
+  if (timestamp === null) {
+    await AsyncStorage.removeItem(UNCONFIRMED_STARTED_AT_KEY);
+  } else {
+    await AsyncStorage.setItem(UNCONFIRMED_STARTED_AT_KEY, String(timestamp));
+  }
+};
+
+/**
+ * UNCONFIRMED状態になった時刻を設定する
+ * UNCONFIRMEDに遷移時に現在時刻を設定、PRESENT/INSIDE_AREA等に遷移時にnullで消去
+ */
+export const setUnconfirmedStartedAt = async (
+  timestamp: number | null
+): Promise<void> => {
+  cachedUnconfirmedStartedAt = timestamp;
+  await persistUnconfirmedStartedAt(timestamp);
+};
+
+/**
+ * UNCONFIRMED状態が指定時間以上経過しているかチェック
+ * @param debounceMs デバウンス期間（ミリ秒）
+ * @param now 現在時刻（デフォルト: Date.now()）
+ * @returns 経過している場合はtrue、UNCONFIRMEDでない/経過していない場合はfalse
+ */
+export const isUnconfirmedExpired = async (
+  debounceMs: number,
+  now: number = Date.now()
+): Promise<boolean> => {
+  const startedAt = await getUnconfirmedStartedAt();
+  if (startedAt === null) {
+    return false;
+  }
+  return now - startedAt >= debounceMs;
+};
+
 export const recordPresenceDetection = async (
   metadata: PresenceMetadata,
   timestamp: number
@@ -150,10 +205,12 @@ export const resetPresenceSession = async (): Promise<void> => {
   cachedPresenceLastSeen = null;
   cachedPresenceEnterSentAt = null;
   cachedPresenceMetadata = null;
+  cachedUnconfirmedStartedAt = null;
   await AsyncStorage.multiRemove([
     PRESENCE_LAST_SEEN_KEY,
     PRESENCE_ENTER_SENT_AT_KEY,
     PRESENCE_METADATA_KEY,
+    UNCONFIRMED_STARTED_AT_KEY,
   ]);
 };
 

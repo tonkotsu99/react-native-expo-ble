@@ -17,6 +17,7 @@ import {
   getPresenceEnterSentAt,
   recordPresenceDetection,
   setPresenceEnterSentAt,
+  setUnconfirmedStartedAt,
   waitForBlePoweredOn,
 } from "./bleStateUtils";
 
@@ -214,6 +215,8 @@ export const startUnconfirmedTimer = async (ms: number): Promise<void> => {
       const currentState = await getAppState();
       if (currentState === "UNCONFIRMED") {
         await setAppState("INSIDE_AREA");
+        // UNCONFIRMED開始時刻をクリア（INSIDE_AREAに遷移したため）
+        await setUnconfirmedStartedAt(null);
         console.log(
           "[Continuous Scan] Unconfirmed timer expired. State changed to INSIDE_AREA"
         );
@@ -422,6 +425,8 @@ export const startContinuousBleScanner = async (): Promise<void> => {
                 `[Continuous Scan] Exit threshold met: ${smoothedRssi} < ${RSSI_EXIT_THRESHOLD}`
               );
               await setAppState("UNCONFIRMED");
+              // UNCONFIRMED開始時刻を永続化（Androidバックグラウンド対応）
+              await setUnconfirmedStartedAt(Date.now());
               await startUnconfirmedTimer(RSSI_DEBOUNCE_TIME_MS);
             }
           } else if (currentState === "UNCONFIRMED") {
@@ -431,6 +436,8 @@ export const startContinuousBleScanner = async (): Promise<void> => {
               );
               await setAppState("PRESENT");
               clearUnconfirmedTimer();
+              // UNCONFIRMED開始時刻をクリア（PRESENTに復帰したため）
+              await setUnconfirmedStartedAt(null);
 
               // UNCONFIRMED から PRESENT に復帰した場合でも、
               // まだ入室 API を送っていなければ送信する（手動の再検出/再接続フローで必要）。

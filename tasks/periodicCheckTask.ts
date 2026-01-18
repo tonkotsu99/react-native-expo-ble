@@ -7,9 +7,12 @@ import {
   getPresenceEnterSentAt,
   getPresenceLastSeen,
   getPresenceMetadata,
+  getUnconfirmedStartedAt,
+  isUnconfirmedExpired,
   recordPresenceDetection,
   resetPresenceSession,
   setPresenceEnterSentAt,
+  setUnconfirmedStartedAt,
   waitForBlePoweredOn,
 } from "../bluetooth/bleStateUtils";
 import {
@@ -25,6 +28,7 @@ import {
   BLE_DEVICE_NAME_PREFIXES,
   BLE_SERVICE_UUIDS,
   DEBUG_BLE,
+  RSSI_DEBOUNCE_TIME_MS,
   RSSI_ENTER_THRESHOLD,
 } from "../constants";
 import { GEOFENCE_REGION } from "../constants/geofence";
@@ -642,6 +646,8 @@ const periodicTask = async (taskId: string) => {
         `${LOG_PREFIX} Presence is fresh but state is UNCONFIRMED. Reconciling to PRESENT.`
       );
       await setAppState("PRESENT");
+      // UNCONFIRMED開始時刻をクリア
+      await setUnconfirmedStartedAt(null);
       previousState = "PRESENT";
 
       const enterSentAt = await getPresenceEnterSentAt();
@@ -653,6 +659,37 @@ const periodicTask = async (taskId: string) => {
             deviceName: metadata.deviceName ?? null,
           });
           await setPresenceEnterSentAt(now);
+        }
+      }
+    }
+
+    // Android: UNCONFIRMED状態で永続化タイマーが期限切れの場合、INSIDE_AREAに遷移
+    // JavaScriptのsetTimeoutはバックグラウンドで停止するため、永続化された時刻でチェック
+    if (Platform.OS === "android" && previousState === "UNCONFIRMED") {
+      const unconfirmedExpired = await isUnconfirmedExpired(
+        RSSI_DEBOUNCE_TIME_MS,
+        now
+      );
+      if (unconfirmedExpired) {
+        const unconfirmedStartedAt = await getUnconfirmedStartedAt();
+        const elapsedMs = unconfirmedStartedAt
+          ? now - unconfirmedStartedAt
+          : "unknown";
+        console.log(
+          `${LOG_PREFIX} UNCONFIRMED timer expired (elapsed=${elapsedMs}ms). Transitioning to INSIDE_AREA.`
+        );
+        await setAppState("INSIDE_AREA");
+        await setUnconfirmedStartedAt(null);
+        previousState = "INSIDE_AREA";
+
+        // 通知を送信
+        await sendBleDisconnectedNotification(null);
+
+        if (Platform.OS === "android") {
+          await notifyAndroidDebug(
+            "UNCONFIRMED timer expired",
+            `elapsed=${elapsedMs}ms; state=INSIDE_AREA`
+          );
         }
       }
     }

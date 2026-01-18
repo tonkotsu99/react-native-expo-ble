@@ -64,7 +64,7 @@
 システムは以下の 4 つの状態を管理します：
 
 ```
-OUTSIDE ──[Geofence Enter]──> INSIDE_AREA ──[RSSI ≥ -70dBm]──> PRESENT
+OUTSIDE ──[Geofence Enter]──> INSIDE_AREA ──[RSSI ≥ -80dBm or iOS BG]──> PRESENT
    ▲                                                              │
    │                                                              │
    └──[Geofence Exit]────────────────────────────────────────────┘
@@ -73,7 +73,7 @@ OUTSIDE ──[Geofence Enter]──> INSIDE_AREA ──[RSSI ≥ -70dBm]──>
                                                                     ▼
                                                               UNCONFIRMED
                                                                     │
-                                                                    │ [3分経過]
+                                                                    │ [1分経過 or Presence TTL 3分経過]
                                                                     ▼
                                                               INSIDE_AREA
 ```
@@ -101,17 +101,38 @@ const smoothedRssi = average(rssiHistory.slice(-5));
 
 誤検知を防ぐため、入室と退室で異なるしきい値を設定：
 
-- **入室判定**: RSSI ≥ -70 dBm
+- **入室判定**: RSSI ≥ -80 dBm
 - **退室判定**: RSSI < -90 dBm
-- **差**: 20 dBm（約 10 倍の信号強度差）
+- **差**: 10 dBm（約 3 倍の信号強度差）
 
 #### 2.3.3 デバウンス機構
 
-一時的な信号喪失を許容するため、UNCONFIRMED 状態から INSIDE_AREA への遷移に 3 分の猶予期間を設定：
+一時的な信号喪失を許容するため、UNCONFIRMED 状態から INSIDE_AREA への遷移に 1 分の猶予期間を設定：
 
 ```typescript
-const RSSI_DEBOUNCE_TIME_MS = 3 * 60 * 1000; // 3分
+const RSSI_DEBOUNCE_TIME_MS = 1 * 60 * 1000; // 1分
 ```
+
+#### 2.3.4 iOS バックグラウンドでの RSSI 閾値スキップ
+
+iOS バックグラウンドでは、BLE 検出自体が近接の証拠として扱われ、RSSI 閾値チェックをスキップします：
+
+```typescript
+const isBackground = Platform.OS === "ios" && AppState.currentState !== "active";
+const shouldEnter = isBackground || smoothedRssi >= RSSI_ENTER_THRESHOLD;
+```
+
+この仕様により、iOS バックグラウンドでも確実に在室検知が行われます。
+
+#### 2.3.5 Presence TTL（有効期限）
+
+検出されたビーコンの有効期限を管理するため、Presence TTL を設定：
+
+```typescript
+const PRESENCE_TTL_MS = 180000; // 3分
+```
+
+この期間を超えて検出がない場合、PRESENT 状態から UNCONFIRMED に自動的に遷移します。
 
 ## 3. 技術的実装の詳細
 
@@ -190,10 +211,10 @@ BackgroundFetch.registerHeadlessTask(headlessTask);
 
 ```typescript
 const GEOFENCE_REGION: LocationRegion = {
-  identifier: "kyutech-campus",
-  latitude: 33.8823,
-  longitude: 130.8797,
-  radius: 150, // メートル
+  identifier: "office-kyutech",
+  latitude: 33.8935,
+  longitude: 130.8412,
+  radius: 200, // メートル（Androidの精度・取りこぼし対策として拡大）
   notifyOnEnter: true,
   notifyOnExit: true,
 };
@@ -204,16 +225,32 @@ const GEOFENCE_REGION: LocationRegion = {
 **ENTER イベント**:
 
 1. アプリ状態を`INSIDE_AREA`に更新
-2. 在室 API (`API_URL_INSIDE_AREA`) に POST
+2. ジオフェンス内滞在 API (`API_URL_INSIDE_AREA`) に POST（重複送信防止あり）
 3. 連続 BLE スキャンを開始
+   - Android: フォアグラウンドサービス付きで開始（通知権限必須）
+   - iOS: State Restoration により自動的にバックグラウンド動作
 4. BackgroundFetch を開始（定期チェック用）
 
 **EXIT イベント**:
 
-1. アプリ状態を`OUTSIDE`に更新
-2. 退室 API (`API_URL_EXIT`) に POST
-3. 連続 BLE スキャンを停止
-4. BackgroundFetch を停止
+1. UNCONFIRMED タイマーをクリア
+2. Presence セッションをリセット
+3. アプリ状態を`OUTSIDE`に更新
+4. 退室 API (`API_URL_EXIT`) に POST
+5. 連続 BLE スキャンを停止
+6. BackgroundFetch を停止
+
+#### 3.2.3 INSIDE_AREA 状態の通知
+
+ジオフェンス内にいるが、まだ研究室内（PRESENT）ではない状態をサーバーに通知：
+
+- **トリガー**: ジオフェンス ENTER、定期チェック、BLE 切断時
+- **重複送信防止**: `inside_area_reported` フラグで管理
+- **API エンドポイント**: `API_URL_INSIDE_AREA`
+- **送信タイミング**:
+  - ジオフェンス ENTER 時（前回の状態が INSIDE_AREA でない場合）
+  - 定期チェックで INSIDE_AREA 状態が維持されている場合
+  - PRESENT → INSIDE_AREA 遷移時
 
 ### 3.3 連続 BLE スキャン実装
 
@@ -284,28 +321,68 @@ await BackgroundFetch.configure(
     startOnBoot: true, // Android: 再起動後も開始
     enableHeadless: true, // Android: Headlessタスク有効化
     forceAlarmManager: true, // Android: AlarmManager使用
+    requiredNetworkType: BackgroundFetch.NETWORK_TYPE_ANY,
+    requiresBatteryNotLow: false,
+    requiresCharging: false,
+    requiresDeviceIdle: false,
   },
   periodicTask,
   timeoutHandler
 );
 ```
 
+**Android カスタムタスク**:
+
+Android では、より頻繁なチェックのために 5 分間隔のカスタムタスクを追加でスケジュール：
+
+```typescript
+await BackgroundFetch.scheduleTask({
+  taskId: "com.reactnativeexpoble.periodic-ble-check",
+  delay: 5 * 60 * 1000, // 5分後に最初の実行
+  periodic: true,
+  forceAlarmManager: true,
+  enableHeadless: true,
+  stopOnTerminate: false,
+  startOnBoot: true,
+});
+```
+
 #### 3.4.2 定期タスクロジック
+
+定期タスクは以下の機能を実装：
+
+1. **Presence TTL チェック**: PRESENT 状態で検出が古い場合、UNCONFIRMED に遷移
+2. **状態の整合性チェック**: UNCONFIRMED だが検出が新鮮な場合、PRESENT に復帰
+3. **ジオフェンス EXIT 補完チェック**: Android でジオフェンス EXIT イベントが取りこぼされた場合の補完
+4. **INSIDE_AREA 状態の通知**: ジオフェンス内滞在をサーバーに通知（重複送信防止あり）
+5. **高速再試行ウィンドウ**: 連続スキャン停止後の短時間は定期スキャンをスキップ
+6. **重複スキャン防止**: 連続スキャンが有効な場合は定期スキャンをスキップ
 
 ```typescript
 const periodicTask = async (taskId: string) => {
-  const appState = await getAppState();
+  // Presence TTL チェック
+  if (previousState === "PRESENT" && !presenceFresh) {
+    await setAppState("UNCONFIRMED");
+  }
 
-  // INSIDE_AREA/UNCONFIRMED状態の場合のみスキャン
-  if (appState === "INSIDE_AREA" || appState === "UNCONFIRMED") {
-    // 連続スキャンが有効な場合はスキップ（Android）
-    if (isContinuousScanActive) return;
+  // 状態の整合性チェック
+  if (previousState === "UNCONFIRMED" && presenceFresh) {
+    await setAppState("PRESENT");
+  }
 
-    // 軽量スキャンを実行（15秒タイムアウト）
-    const detected = await scanAndReconnect();
-    if (detected) {
-      await setAppState("PRESENT");
-    }
+  // ジオフェンス EXIT 補完チェック（Android）
+  if (Platform.OS === "android") {
+    const isOutside = await checkGeofenceExit();
+    if (isOutside) return;
+  }
+
+  // 連続スキャンが有効な場合はスキップ
+  if (androidContinuousScanActive) return;
+
+  // 軽量スキャンを実行（15秒タイムアウト）
+  const detected = await scanAndReconnect();
+  if (detected) {
+    await setAppState("PRESENT");
   }
 
   BackgroundFetch.finish(taskId);
@@ -316,6 +393,8 @@ const periodicTask = async (taskId: string) => {
 
 #### 3.5.1 AsyncStorage ベースの永続化
 
+以下の状態を永続化して、アプリ再起動や Headless 起動時に復元：
+
 ```typescript
 // アプリ状態の永続化
 const APP_STATE_KEY = "app_state";
@@ -324,6 +403,17 @@ await AsyncStorage.setItem(APP_STATE_KEY, "PRESENT");
 // 連続スキャン状態の永続化（Headless起動対応）
 const CONTINUOUS_SCAN_ACTIVE_KEY = "continuous_scan_active";
 await AsyncStorage.setItem(CONTINUOUS_SCAN_ACTIVE_KEY, "true");
+
+// Presence 検出情報の永続化
+const PRESENCE_LAST_SEEN_KEY = "ble_presence_last_seen";
+const PRESENCE_METADATA_KEY = "ble_presence_metadata";
+const PRESENCE_ENTER_SENT_AT_KEY = "ble_presence_enter_sent_at";
+
+// INSIDE_AREA 通知送信状態の永続化（重複送信防止）
+const INSIDE_AREA_REPORTED_KEY = "inside_area_reported";
+
+// 高速再試行ウィンドウの終了時刻（スロットリング用）
+const RAPID_RETRY_UNTIL_KEY = "rapid_retry_until";
 ```
 
 #### 3.5.2 Headless 起動時の状態復元
@@ -402,7 +492,11 @@ BLE の RSSI 値は環境要因により大きく変動し、単純なしきい�
 
 - **サービス UUID フィルタリング**: iOS では OS レベルでフィルタリング
 - **プラットフォーム最適化**: Android はフォアグラウンドサービス、iOS は State Restoration
-- **定期チェックとの併用**: 連続スキャンが無効な場合は定期チェック（15 分間隔）にフォールバック
+- **定期チェックとの併用**: 連続スキャンが無効な場合は定期チェックにフォールバック
+  - iOS: OS 裁量（最小 15 分間隔）
+  - Android: 5 分間隔のカスタムタスク
+- **高速再試行ウィンドウ**: 連続スキャン停止後の短時間は定期スキャンをスキップ
+- **重複スキャン防止**: 連続スキャンが有効な場合は定期スキャンをスキップ
 
 ## 5. 評価と検証
 
@@ -417,17 +511,21 @@ BLE の RSSI 値は環境要因により大きく変動し、単純なしきい�
 ### 5.2 パフォーマンス指標
 
 - **RSSI 検知遅延**: 平均 2-5 秒（スムージングウィンドウによる）
-- **状態遷移遅延**: UNCONFIRMED→INSIDE_AREA は最大 3 分（デバウンス期間）
+- **状態遷移遅延**: UNCONFIRMED→INSIDE_AREA は最大 1 分（デバウンス期間）
+- **Presence TTL**: 3 分（検出が古い場合の自動遷移）
+- **定期チェック間隔**: iOS は OS 裁量（最小 15 分）、Android は 5 分間隔のカスタムタスク
 - **バッテリー消費**: 連続スキャン時は約 5-10%/時間（デバイス依存）
-- **API 通信成功率**: 99%以上（リトライ機構による）
+- **API 通信成功率**: 99%以上（重複送信防止機構による）
 
 ## 6. 技術スタック
 
 ### 6.1 フレームワーク・ライブラリ
 
-- **React Native 0.81**: クロスプラットフォーム開発
+- **React Native 0.81.5**: クロスプラットフォーム開発
+- **React 19.1.0**: UI フレームワーク
 - **Expo SDK 54**: ネイティブモジュール統合
-- **TypeScript**: 型安全性の確保
+- **Expo Router 6**: ファイルベースルーティング
+- **TypeScript 5.9**: 型安全性の確保
 - **Tamagui**: UI コンポーネントライブラリ
 
 ### 6.2 ネイティブモジュール
@@ -466,5 +564,6 @@ BLE の RSSI 値は環境要因により大きく変動し、単純なしきい�
 ---
 
 **作成日**: 2025 年 1 月
+**最終更新**: 2025 年 1 月
 **プロジェクト**: react-native-expo-ble
 **バージョン**: 1.0.0
